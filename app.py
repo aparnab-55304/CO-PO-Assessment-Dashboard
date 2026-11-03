@@ -1,273 +1,454 @@
 
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.express as px
 from io import BytesIO
 
-# --------------------------------------------------
-# PAGE CONFIGURATION
-# --------------------------------------------------
+# ==========================================
+# 1. PAGE CONFIGURATION
+# ==========================================
 
 st.set_page_config(
-    page_title="CO-PO Assessment Dashboard",
+    page_title="CO Assessment Dashboard",
     page_icon="📊",
     layout="wide"
 )
 
-# --------------------------------------------------
-# CUSTOM DESIGN
-# --------------------------------------------------
+# ==========================================
+# 2. CUSTOM CSS
+# ==========================================
 
 st.markdown("""
 <style>
-.main {
-    background-color: #f5f7fb;
+.stApp {
+    background-color: #F4F7FB;
 }
-h1 {
+.main-title {
+    color: #17365D;
+    font-size: 32px;
+    font-weight: bold;
+}
+.subtitle {
+    color: #64748B;
+    font-size: 15px;
+}
+div[data-testid="stMetric"] {
+    background-color: white;
+    border: 1px solid #DCE4EF;
+    padding: 18px;
+    border-radius: 12px;
+}
+div[data-testid="stMetricValue"] {
     color: #17365D;
 }
-h2, h3 {
-    color: #24476B;
-}
-[data-testid="stMetric"] {
-    background-color: white;
-    padding: 15px;
-    border-radius: 10px;
-    border: 1px solid #e0e5ed;
+section[data-testid="stSidebar"] {
+    background-color: #EAF0F8;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# --------------------------------------------------
-# TITLE
-# --------------------------------------------------
+# ==========================================
+# 3. DEFAULT DATA
+# ==========================================
 
-st.title("📊 CO-PO Assessment Dashboard")
+ASSESSMENTS = ["PA1", "PA2", "LE", "LM"]
+COS = ["CO1", "CO2", "CO3", "CO4"]
 
-st.markdown("""
-**Interactive CO-PO Assessment Weight Distribution and Analysis**
-
-This dashboard calculates assessment-wise weighted scores,
-CO weight distribution and overall performance.
-""")
-
-st.divider()
-
-# --------------------------------------------------
-# ASSESSMENT WEIGHTS
-# --------------------------------------------------
-
-st.header("1. Assessment Weight Configuration")
-
-assessment_names = [
-    "Assessment 1",
-    "Assessment 2",
-    "Assessment 3",
-    "Assessment 4",
-    "Assessment 5"
-]
-
-default_weights = [4, 4, 3, 3, 6]
-
-weight_df = pd.DataFrame({
-    "Assessment": assessment_names,
-    "Weight": default_weights
+DEFAULT_MARKS = pd.DataFrame({
+    "Assessment": ASSESSMENTS,
+    "Weight": [3, 4, 8, 5]
 })
 
-edited_weights = st.data_editor(
-    weight_df,
-    hide_index=True,
-    use_container_width=True,
-    disabled=["Assessment"],
-    column_config={
-        "Weight": st.column_config.NumberColumn(
-            "Weight",
-            min_value=0,
-            max_value=20,
-            step=1
-        )
-    },
-    key="assessment_weights"
+DEFAULT_COVERAGE = pd.DataFrame({
+    "Assessment": ASSESSMENTS,
+    "CO1": [True, False, True, True],
+    "CO2": [True, False, True, True],
+    "CO3": [False, True, True, True],
+    "CO4": [False, True, True, True]
+})
+
+# ==========================================
+# 4. SESSION STATE
+# ==========================================
+
+if "marks" not in st.session_state:
+    st.session_state.marks = DEFAULT_MARKS.copy()
+
+if "coverage" not in st.session_state:
+    st.session_state.coverage = DEFAULT_COVERAGE.copy()
+
+if "co_weights" not in st.session_state:
+    st.session_state.co_weights = {
+        "CO1": 8.0,
+        "CO2": 8.0,
+        "CO3": 7.0,
+        "CO4": 7.0
+    }
+
+# ==========================================
+# 5. HEADER
+# ==========================================
+
+st.markdown(
+    '<div class="main-title">📊 CO ASSESSMENT DASHBOARD</div>',
+    unsafe_allow_html=True
 )
 
-weights = edited_weights["Weight"].tolist()
-total_weight = sum(weights)
-
-col1, col2 = st.columns(2)
-
-col1.metric("Total Assessment Weight", total_weight)
-col2.metric("Maximum Internal Weight", 20)
-
-if total_weight != 20:
-    st.error("Assessment weights must add up to 20.")
-    st.stop()
-
-st.success("Assessment weights are valid. Total = 20.")
+st.markdown(
+    '<div class="subtitle">Course Outcome Assessment, '
+    'Weight Allocation and Performance Analysis</div>',
+    unsafe_allow_html=True
+)
 
 st.divider()
 
-# --------------------------------------------------
-# CO-PO MATRIX
-# --------------------------------------------------
+# ==========================================
+# 6. SIDEBAR
+# ==========================================
 
-st.header("2. CO-PO Assessment Matrix")
+st.sidebar.title("⚙️ Dashboard Settings")
 
-st.write("""
-Enter the assessment contribution or attainment percentage
-for each row and assessment.
+course_name = st.sidebar.text_input(
+    "Course Name",
+    "Statistical Computing"
+)
 
-- Enter values between 0 and 100.
-- Missing cells must be completed manually by the teacher.
-- The dashboard will not automatically replace missing values.
-""")
+course_code = st.sidebar.text_input(
+    "Course Code",
+    "ST040303"
+)
 
-rows = ["PO1", "PO2", "LE", "LM"]
+internal_max = st.sidebar.number_input(
+    "Maximum Internal Marks",
+    min_value=1.0,
+    value=20.0,
+    step=1.0
+)
 
-if "matrix_data" not in st.session_state:
-    st.session_state.matrix_data = pd.DataFrame(
-        np.nan,
-        index=rows,
-        columns=assessment_names
-    )
+external_max = st.sidebar.number_input(
+    "Maximum External Marks",
+    min_value=1.0,
+    value=30.0,
+    step=1.0
+)
 
-edited_matrix = st.data_editor(
-    st.session_state.matrix_data,
+st.sidebar.markdown("---")
+st.sidebar.info(
+    "Edit assessment marks, CO weights and coverage "
+    "using the tables in the dashboard."
+)
+
+# ==========================================
+# 7. ASSESSMENT WEIGHTS
+# ==========================================
+
+st.header("1. Assessment Weight Allocation")
+
+st.write(
+    "Enter the maximum marks/weights assigned to each assessment."
+)
+
+marks_df = st.data_editor(
+    st.session_state.marks,
+    num_rows="dynamic",
     use_container_width=True,
-    key="matrix_editor",
+    key="marks_editor",
     column_config={
-        col: st.column_config.NumberColumn(
-            col,
-            min_value=0,
-            max_value=100,
-            step=1,
-            format="%.2f"
+        "Assessment": st.column_config.TextColumn(
+            "Assessment",
+            required=True
+        ),
+        "Weight": st.column_config.NumberColumn(
+            "Assessment Weight",
+            min_value=0.0,
+            max_value=100.0,
+            step=1.0,
+            required=True
         )
-        for col in assessment_names
     }
 )
 
-st.session_state.matrix_data = edited_matrix
+# ==========================================
+# 8. CO WEIGHTS
+# ==========================================
 
-st.divider()
+st.header("2. Course Outcome Weights")
 
-# --------------------------------------------------
-# VALIDATION
-# --------------------------------------------------
-
-st.header("3. Data Validation")
-
-matrix = edited_matrix[assessment_names].apply(
-    pd.to_numeric, errors="coerce"
+st.write(
+    "Enter the external/overall weight assigned to each CO."
 )
 
-missing_count = int(matrix.isna().sum().sum())
+cols = st.columns(4)
 
-invalid_count = int(
-    ((matrix < 0) | (matrix > 100)).sum().sum()
+co_weights = {}
+
+for i, co in enumerate(COS):
+    with cols[i]:
+        co_weights[co] = st.number_input(
+            co,
+            min_value=0.0,
+            max_value=100.0,
+            value=float(st.session_state.co_weights[co]),
+            step=1.0,
+            key="input_" + co
+        )
+
+total_co_weight = sum(co_weights.values())
+
+st.info(
+    f"Total CO Weight: {total_co_weight:.2f} / "
+    f"External Maximum: {external_max:.2f}"
 )
 
-v1, v2, v3 = st.columns(3)
+# ==========================================
+# 9. CO COVERAGE MATRIX
+# ==========================================
 
-v1.metric("Total Cells", matrix.size)
-v2.metric("Missing Cells", missing_count)
-v3.metric("Invalid Cells", invalid_count)
+st.header("3. CO Coverage Matrix")
 
-if missing_count > 0:
-    st.warning(
-        "Some cells are missing. Please enter the values manually. "
-        "Calculations will be completed only after all cells are filled."
+st.write(
+    "Select the COs covered by each assessment."
+)
+
+st.caption(
+    "Checked = 1 (Covered) | Unchecked = 0 (Not Covered)"
+)
+
+coverage_df = st.data_editor(
+    st.session_state.coverage,
+    num_rows="dynamic",
+    use_container_width=True,
+    key="coverage_editor",
+    column_config={
+        "Assessment": st.column_config.TextColumn(
+            "Assessment",
+            disabled=True
+        ),
+        **{
+            co: st.column_config.CheckboxColumn(
+                co,
+                default=False
+            )
+            for co in COS
+        }
+    }
+)
+
+# ==========================================
+# 10. VALIDATION
+# ==========================================
+
+valid = True
+
+if marks_df.empty:
+    st.error("Enter at least one assessment.")
+    valid = False
+
+elif marks_df["Assessment"].isna().any():
+    st.error("Assessment names cannot be empty.")
+    valid = False
+
+elif marks_df["Assessment"].astype(str).str.strip().eq("").any():
+    st.error("Assessment names cannot be empty.")
+    valid = False
+
+elif marks_df["Assessment"].duplicated().any():
+    st.error("Assessment names must be unique.")
+    valid = False
+
+elif marks_df["Weight"].isna().any() or (marks_df["Weight"] < 0).any():
+    st.error("Assessment weights must be non-negative.")
+    valid = False
+
+elif total_co_weight <= 0:
+    st.error("The total CO weight must be greater than zero.")
+    valid = False
+
+elif external_max <= 0 or internal_max <= 0:
+    st.error("Maximum marks must be greater than zero.")
+    valid = False
+
+elif set(marks_df["Assessment"].astype(str)) != set(
+    coverage_df["Assessment"].astype(str)
+):
+    st.error("Assessment names in the coverage matrix must match the assessment table.")
+    valid = False
+
+# ==========================================
+# 11. CALCULATION
+# ==========================================
+
+if valid:
+
+    marks_df = marks_df.copy()
+    coverage_df = coverage_df.copy()
+
+    result_rows = []
+
+    for _, assessment in marks_df.iterrows():
+
+        name = str(assessment["Assessment"])
+        assessment_weight = float(assessment["Weight"])
+
+        coverage_row = coverage_df[
+            coverage_df["Assessment"].astype(str) == name
+        ].iloc[0]
+
+        covered_cos = [
+            co for co in COS
+            if bool(coverage_row[co])
+        ]
+
+        covered_weight = sum(
+            co_weights[co] for co in covered_cos
+        )
+
+        row = {
+            "Assessment": name,
+            "Assessment Weight": assessment_weight
+        }
+
+        for co in COS:
+
+            if co in covered_cos and covered_weight > 0:
+
+                contribution = (
+                    co_weights[co] / covered_weight
+                ) * assessment_weight
+
+            else:
+                contribution = 0.0
+
+            row[co] = contribution
+
+        row["Total"] = sum(row[co] for co in COS)
+
+        result_rows.append(row)
+
+    result_df = pd.DataFrame(result_rows)
+
+    # CO-wise internal totals
+
+    co_totals = {
+        co: result_df[co].sum()
+        for co in COS
+    }
+
+    total_internal = sum(co_totals.values())
+    total_assessment_weight = marks_df["Weight"].sum()
+
+    # CO-wise allocation of internal CCA marks
+    # Based on CO weight / total CO weight * internal maximum
+
+    cca_weights = {
+        co: (co_weights[co] / total_co_weight) * internal_max
+        for co in COS
+    }
+
+    # ======================================
+    # 12. DASHBOARD SUMMARY
+    # ======================================
+
+    st.divider()
+    st.header("4. Dashboard Overview")
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric(
+        "Total Assessments",
+        len(marks_df)
     )
 
-if invalid_count > 0:
-    st.error("Values must be between 0 and 100.")
-
-# --------------------------------------------------
-# CALCULATIONS
-# --------------------------------------------------
-
-if missing_count == 0 and invalid_count == 0:
-
-    weight_series = pd.Series(
-        weights,
-        index=assessment_names
+    c2.metric(
+        "Internal Maximum",
+        f"{internal_max:.2f}"
     )
 
-    # Weighted contribution of each assessment
-    weighted_matrix = matrix.mul(
-        weight_series / 20,
-        axis=1
+    c3.metric(
+        "External Maximum",
+        f"{external_max:.2f}"
     )
 
-    # Total weighted score for each row
-    row_totals = weighted_matrix.sum(axis=1)
+    c4.metric(
+        "Total CO Weight",
+        f"{total_co_weight:.2f}"
+    )
 
-    # Assessment-wise totals
-    column_totals = weighted_matrix.sum(axis=0)
+    st.divider()
 
-    # Overall total
-    grand_total = row_totals.sum()
+    # ======================================
+    # 13. ASSESSMENT CONTRIBUTION TABLE
+    # ======================================
 
-    st.header("4. Calculated Results")
+    st.header("5. Assessment-wise CO Contribution")
 
-    result_df = weighted_matrix.copy()
-    result_df["Total Weighted Score"] = row_totals
+    st.write(
+        "Each assessment weight is distributed among "
+        "the covered COs according to their relative weights."
+    )
 
-    st.subheader("Weighted Assessment Matrix")
+    display_result = result_df.copy()
 
     st.dataframe(
-        result_df.round(2),
-        use_container_width=True
+        display_result.round(2),
+        use_container_width=True,
+        hide_index=True
     )
 
-    r1, r2, r3 = st.columns(3)
+    # ======================================
+    # 14. CO-WISE INTERNAL SUMMARY
+    # ======================================
 
-    r1.metric("Overall Weighted Total", f"{grand_total:.2f}")
-    r2.metric("Number of Dimensions", len(rows))
-    r3.metric("Completed Cells", matrix.size)
+    st.header("6. CO-wise Internal Assessment")
 
-    st.subheader("Assessment-wise Weighted Contribution")
-
-    column_result = pd.DataFrame({
-        "Assessment": assessment_names,
-        "Assessment Weight": weights,
-        "Weighted Contribution": column_totals.values
+    co_result = pd.DataFrame({
+        "Course Outcome": COS,
+        "CO Weight": [co_weights[co] for co in COS],
+        "Internal Marks": [co_totals[co] for co in COS],
+        "CCA Maximum": [cca_weights[co] for co in COS]
     })
 
-    st.dataframe(
-        column_result.round(2),
-        hide_index=True,
-        use_container_width=True
+    co_result["Percentage of Internal Maximum"] = (
+        co_result["Internal Marks"] / internal_max * 100
     )
 
-    st.subheader("Row-wise Total")
-
-    row_result = pd.DataFrame({
-        "Dimension": rows,
-        "Total Weighted Score": row_totals.values
-    })
-
-    st.dataframe(
-        row_result.round(2),
-        hide_index=True,
-        use_container_width=True
+    co_result["Difference"] = (
+        co_result["CCA Maximum"] -
+        co_result["Internal Marks"]
     )
 
-    # --------------------------------------------------
-    # CHARTS
-    # --------------------------------------------------
+    st.dataframe(
+        co_result.round(2),
+        use_container_width=True,
+        hide_index=True
+    )
 
-    st.header("5. Visual Dashboard")
+    # ======================================
+    # 15. CO PERFORMANCE CHART
+    # ======================================
 
-    chart1, chart2 = st.columns(2)
+    st.divider()
+    st.header("7. Visual Analysis")
 
-    with chart1:
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        st.subheader("CO-wise Internal Marks")
+
         fig1 = px.bar(
-            row_result,
-            x="Dimension",
-            y="Total Weighted Score",
-            title="Dimension-wise Weighted Scores",
-            text_auto=".2f"
+            co_result,
+            x="Course Outcome",
+            y="Internal Marks",
+            color="Course Outcome",
+            text="Internal Marks",
+            title="Internal Marks Obtained by Each CO"
+        )
+
+        fig1.update_layout(
+            showlegend=False,
+            yaxis_title="Internal Marks",
+            xaxis_title="Course Outcome"
         )
 
         st.plotly_chart(
@@ -275,12 +456,23 @@ if missing_count == 0 and invalid_count == 0:
             use_container_width=True
         )
 
-    with chart2:
-        fig2 = px.pie(
-            column_result,
-            names="Assessment",
-            values="Weighted Contribution",
-            title="Assessment Contribution Distribution"
+    with col2:
+
+        st.subheader("CO-wise CCA Allocation")
+
+        fig2 = px.bar(
+            co_result,
+            x="Course Outcome",
+            y="CCA Maximum",
+            color="Course Outcome",
+            text="CCA Maximum",
+            title="Internal CCA Weight Allocation"
+        )
+
+        fig2.update_layout(
+            showlegend=False,
+            yaxis_title="CCA Maximum",
+            xaxis_title="Course Outcome"
         )
 
         st.plotly_chart(
@@ -288,61 +480,26 @@ if missing_count == 0 and invalid_count == 0:
             use_container_width=True
         )
 
-    # --------------------------------------------------
-    # EXTERNAL AND INTERNAL CO WEIGHTS
-    # --------------------------------------------------
+    # ======================================
+    # 16. ASSESSMENT STACKED CHART
+    # ======================================
 
-    st.divider()
+    st.subheader("Assessment-wise CO Distribution")
 
-    st.header("6. External and Internal CO Weight Distribution")
-
-    external_weights = [8, 8, 7, 7]
-    co_names = ["CO1", "CO2", "CO3", "CO4"]
-
-    co_df = pd.DataFrame({
-        "Course Outcome": co_names,
-        "External Weight": external_weights
-    })
-
-    external_total = sum(external_weights)
-
-    co_df["Internal Weight"] = (
-        co_df["External Weight"] / external_total
-    ) * 20
-
-    co_df["External Percentage"] = (
-        co_df["External Weight"] / external_total
-    ) * 100
-
-    co_df["Internal Percentage"] = (
-        co_df["Internal Weight"] / 20
-    ) * 100
-
-    st.write("""
-    Internal CO weights are calculated proportionally from
-    external CO weights using:
-    
-    **Internal CO Weight = (External CO Weight / 30) × 20**
-    """)
-
-    st.dataframe(
-        co_df.round(2),
-        hide_index=True,
-        use_container_width=True
+    assessment_long = result_df.melt(
+        id_vars=["Assessment"],
+        value_vars=COS,
+        var_name="Course Outcome",
+        value_name="Contribution"
     )
 
-    c1, c2 = st.columns(2)
-
-    c1.metric("External Maximum", f"{external_total}/30")
-    c2.metric("Internal Maximum", "20")
-
     fig3 = px.bar(
-        co_df,
-        x="Course Outcome",
-        y=["External Percentage", "Internal Percentage"],
-        barmode="group",
-        title="External vs Internal CO Weight Distribution",
-        labels={"value": "Percentage", "variable": "Assessment"}
+        assessment_long,
+        x="Assessment",
+        y="Contribution",
+        color="Course Outcome",
+        barmode="stack",
+        title="CO Contribution in Each Assessment"
     )
 
     st.plotly_chart(
@@ -350,13 +507,58 @@ if missing_count == 0 and invalid_count == 0:
         use_container_width=True
     )
 
-    # --------------------------------------------------
-    # EXCEL DOWNLOAD
-    # --------------------------------------------------
+    # ======================================
+    # 17. COVERAGE HEATMAP
+    # ======================================
+
+    st.subheader("CO Coverage Heatmap")
+
+    heatmap_data = coverage_df.set_index(
+        "Assessment"
+    )[COS].astype(int)
+
+    fig4 = px.imshow(
+        heatmap_data,
+        text_auto=True,
+        aspect="auto",
+        color_continuous_scale="Blues",
+        title="Assessment and CO Coverage"
+    )
+
+    st.plotly_chart(
+        fig4,
+        use_container_width=True
+    )
+
+    # ======================================
+    # 18. INTERNAL AND EXTERNAL SUMMARY
+    # ======================================
 
     st.divider()
+    st.header("8. Overall CO Weight Summary")
 
-    st.header("7. Download Assessment Report")
+    overall_result = pd.DataFrame({
+        "Course Outcome": COS,
+        "External CO Weight": [co_weights[co] for co in COS],
+        "Internal CCA Maximum": [cca_weights[co] for co in COS],
+        "Overall Maximum": [
+            co_weights[co] + cca_weights[co]
+            for co in COS
+        ]
+    })
+
+    st.dataframe(
+        overall_result.round(2),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    # ======================================
+    # 19. DOWNLOAD EXCEL REPORT
+    # ======================================
+
+    st.divider()
+    st.header("9. Download Report")
 
     output = BytesIO()
 
@@ -365,54 +567,64 @@ if missing_count == 0 and invalid_count == 0:
         engine="openpyxl"
     ) as writer:
 
-        matrix.to_excel(
+        marks_df.to_excel(
             writer,
-            sheet_name="Input Matrix"
-        )
-
-        weighted_matrix.to_excel(
-            writer,
-            sheet_name="Weighted Results"
-        )
-
-        row_result.to_excel(
-            writer,
-            sheet_name="Row Totals",
+            sheet_name="Assessment_Weights",
             index=False
         )
 
-        column_result.to_excel(
+        coverage_df.to_excel(
             writer,
-            sheet_name="Assessment Totals",
+            sheet_name="CO_Coverage",
             index=False
         )
 
-        co_df.to_excel(
+        result_df.to_excel(
             writer,
-            sheet_name="CO Weight Distribution",
+            sheet_name="Assessment_Contribution",
+            index=False
+        )
+
+        co_result.to_excel(
+            writer,
+            sheet_name="CO_Internal_Summary",
+            index=False
+        )
+
+        overall_result.to_excel(
+            writer,
+            sheet_name="Overall_CO_Summary",
             index=False
         )
 
     st.download_button(
         label="📥 Download Complete Excel Report",
         data=output.getvalue(),
-        file_name="CO_PO_Assessment_Report.xlsx",
+        file_name="CO_Assessment_Dashboard_Report.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-else:
-    st.info(
-        "Complete all missing cells and correct invalid values "
-        "to generate the dashboard results."
+    # ======================================
+    # 20. FOOTER
+    # ======================================
+
+    st.divider()
+
+    st.markdown(
+        f"""
+        <center>
+        <b>CO Assessment Dashboard</b><br>
+        {course_name} | {course_code}<br>
+        Internal Assessment and CO Weight Analysis
+        </center>
+        """,
+        unsafe_allow_html=True
     )
 
-# --------------------------------------------------
-# FOOTER
-# --------------------------------------------------
+    # Save editable data for next rerun
+    st.session_state.marks = marks_df.copy()
+    st.session_state.coverage = coverage_df.copy()
+    st.session_state.co_weights = co_weights.copy()
 
-st.divider()
-
-st.caption(
-    "CO-PO Assessment Dashboard | Developed using Python and Streamlit"
-)
-
+else:
+    st.warning("Correct the input errors to generate the dashboard.")
