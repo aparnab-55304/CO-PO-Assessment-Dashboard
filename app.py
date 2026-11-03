@@ -3,9 +3,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# --------------------------------------------------
+# ==================================================
 # PAGE CONFIGURATION
-# --------------------------------------------------
+# ==================================================
 
 st.set_page_config(
     page_title="CO-PO Assessment Dashboard",
@@ -13,119 +13,114 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("📊 CO–PO Assessment Dashboard")
+st.title("CO–PO Assessment Dashboard")
 st.write("Automated Course Outcome and Programme Outcome Assessment")
 
 st.divider()
 
-# --------------------------------------------------
-# DEFAULT SETTINGS FROM THE EXCEL WORKBOOK
-# --------------------------------------------------
+# ==================================================
+# BASIC STRUCTURE
+# ==================================================
 
 CO_NAMES = ["CO1", "CO2", "CO3", "CO4"]
-PO_NAMES = ["PO1", "PO2", "PO3", "PO4", "PO5"]
+PO_NAMES = ["PO1", "PO2"]
 
-# Fixed assessment weights (editable by teacher)
-DEFAULT_ASSESSMENT_WEIGHTS = {
-    "PA1": 3,
-    "PA2": 4,
-    "LE": 8,
-    "LM": 5
-}
+ASSESSMENTS = ["PA1", "PA2", "LE1", "LE2"]
 
-# Fixed assessment coverage
+# Fixed assessment coverage based on the supplied workbook
 coverage = pd.DataFrame(
     [
-        [1, 1, 0, 0],
-        [0, 0, 1, 1],
-        [1, 1, 1, 1],
-        [1, 1, 1, 1]
+        [1, 1, 0, 0],  # PA1
+        [0, 0, 1, 1],  # PA2
+        [1, 1, 1, 1],  # LE1
+        [1, 1, 1, 1]   # LE2
     ],
-    index=["PA1", "PA2", "LE", "LM"],
+    index=ASSESSMENTS,
     columns=CO_NAMES
 )
 
-# --------------------------------------------------
-# 1. TEACHER INPUT: CO WEIGHTS
-# --------------------------------------------------
+# ==================================================
+# 1. CO WEIGHTS
+# ==================================================
 
-st.header("1. Course Outcome (CO) Weights")
+st.header("1. Course Outcome Weights")
 
-st.caption("Enter the weight assigned to each Course Outcome.")
-
-co_cols = st.columns(4)
-
-co_weights = {}
+st.caption("Enter the weight assigned to each CO.")
 
 default_co_weights = [8, 8, 7, 7]
+
+co_cols = st.columns(4)
+co_weights = {}
 
 for i, co in enumerate(CO_NAMES):
     with co_cols[i]:
         co_weights[co] = st.number_input(
             co,
             min_value=0.0,
-            max_value=100.0,
             value=float(default_co_weights[i]),
             step=1.0,
-            key=f"weight_{co}"
+            key=f"co_{co}"
         )
 
 total_co_weight = sum(co_weights.values())
 
 st.info(f"Total CO Weight: {total_co_weight:.2f}")
 
-# --------------------------------------------------
-# 2. TEACHER INPUT: PO WEIGHTS
-# --------------------------------------------------
+# ==================================================
+# 2. PO WEIGHTS
+# ==================================================
 
-st.header("2. Programme Outcome (PO) Weights")
+st.header("2. Programme Outcome Weights")
 
-st.caption("Enter the weight assigned to each Programme Outcome.")
+st.caption("Enter the weight assigned to PO1 and PO2.")
 
-po_cols = st.columns(5)
+default_po_weights = [8, 8]
 
+po_cols = st.columns(2)
 po_weights = {}
-
-default_po_weights = [8, 8, 7, 7, 6]
 
 for i, po in enumerate(PO_NAMES):
     with po_cols[i]:
         po_weights[po] = st.number_input(
             po,
             min_value=0.0,
-            max_value=100.0,
             value=float(default_po_weights[i]),
             step=1.0,
-            key=f"weight_{po}"
+            key=f"po_{po}"
         )
 
-total_po_weight = sum(po_weights.values())
-
-st.info(f"Total PO Weight: {total_po_weight:.2f}")
+st.info(
+    f"Total PO Weight: {sum(po_weights.values()):.2f}"
+)
 
 st.divider()
 
-# --------------------------------------------------
+# ==================================================
 # 3. ASSESSMENT WEIGHTS
-# --------------------------------------------------
+# ==================================================
 
 st.header("3. Assessment Weights")
 
 st.caption(
-    "Default values are taken from your Excel workbook. "
-    "Change them if your course uses different weights."
+    "Enter the weight allocated to PA1, PA2, LE1 and LE2."
 )
 
+default_assessment_weights = {
+    "PA1": 3,
+    "PA2": 4,
+    "LE1": 8,
+    "LE2": 5
+}
+
+assessment_cols = st.columns(4)
 assessment_weights = {}
 
-assess_cols = st.columns(4)
-
-for i, assessment in enumerate(DEFAULT_ASSESSMENT_WEIGHTS):
-    with assess_cols[i]:
+for i, assessment in enumerate(ASSESSMENTS):
+    with assessment_cols[i]:
         assessment_weights[assessment] = st.number_input(
             assessment,
             min_value=0.0,
-            value=float(DEFAULT_ASSESSMENT_WEIGHTS[assessment]),
+            value=float(default_assessment_weights[assessment]),
             step=1.0,
             key=f"assessment_{assessment}"
         )
@@ -136,13 +131,18 @@ st.info(
     f"Total Assessment Weight: {total_assessment_weight:.2f}"
 )
 
-# --------------------------------------------------
-# 4. AUTOMATIC ASSESSMENT-CO MATRIX
-# --------------------------------------------------
+st.divider()
 
-st.header("4. Assessment–CO Matrix")
+# ==================================================
+# 4. ASSESSMENT COVERAGE
+# ==================================================
 
-st.write("Fixed assessment coverage:")
+st.header("4. Assessment–CO Coverage Matrix")
+
+st.write(
+    "The following coverage is fixed according to the "
+    "assessment structure in your Excel workbook."
+)
 
 st.dataframe(
     coverage,
@@ -153,14 +153,19 @@ st.caption(
     "1 = Assessment covers the CO; 0 = Assessment does not cover the CO."
 )
 
-# Calculate allocation matrix
+# ==================================================
+# 5. AUTOMATIC ASSESSMENT-CO ALLOCATION
+# ==================================================
+
+st.header("5. Automatic Assessment–CO Allocation Matrix")
+
 allocation = pd.DataFrame(
     0.0,
-    index=coverage.index,
-    columns=coverage.columns
+    index=ASSESSMENTS,
+    columns=CO_NAMES
 )
 
-for assessment in coverage.index:
+for assessment in ASSESSMENTS:
 
     denominator = sum(
         coverage.loc[assessment, co] * co_weights[co]
@@ -168,7 +173,9 @@ for assessment in coverage.index:
     )
 
     if denominator > 0:
+
         for co in CO_NAMES:
+
             allocation.loc[assessment, co] = (
                 assessment_weights[assessment]
                 * coverage.loc[assessment, co]
@@ -176,22 +183,22 @@ for assessment in coverage.index:
                 / denominator
             )
 
-st.subheader("Automatically Calculated CO Allocation")
+st.subheader("Calculated Allocation Matrix")
 
 st.dataframe(
     allocation.round(3),
     use_container_width=True
 )
 
-co_allocation_totals = allocation.sum(axis=0)
+co_allocation = allocation.sum(axis=0)
 
-st.subheader("Total Internal Marks Allocated to Each CO")
+st.subheader("Total Marks Allocated to Each CO")
 
 st.dataframe(
     pd.DataFrame({
         "CO": CO_NAMES,
         "Allocated Marks": [
-            co_allocation_totals[co] for co in CO_NAMES
+            co_allocation[co] for co in CO_NAMES
         ]
     }).round(3),
     use_container_width=True
@@ -199,39 +206,37 @@ st.dataframe(
 
 st.divider()
 
-# --------------------------------------------------
-# 5. CO-PO MAPPING MATRIX
-# --------------------------------------------------
+# ==================================================
+# 6. CO-PO MAPPING
+# ==================================================
 
-st.header("5. CO–PO Mapping Matrix")
+st.header("6. CO–PO Mapping Matrix")
 
 st.write(
-    "Enter the relationship between each CO and PO. "
-    "This is required to calculate PO attainment."
+    "Enter the relationship between each CO and PO."
 )
 
 st.caption(
-    "0 = No relationship, 1 = Low, 2 = Medium, 3 = High"
+    "0 = No relationship | 1 = Low | 2 = Medium | 3 = High"
 )
 
 mapping_default = pd.DataFrame(
     [
-        [3, 2, 1, 0, 0],
-        [2, 3, 2, 1, 0],
-        [1, 2, 3, 2, 1],
-        [0, 1, 2, 3, 2]
+        [3, 2],
+        [2, 3],
+        [1, 2],
+        [2, 1]
     ],
     index=CO_NAMES,
     columns=PO_NAMES
 )
 
-mapping_input = mapping_default.copy()
-mapping_input.index.name = "CO"
+mapping_default.index.name = "CO"
 
 mapping_input = st.data_editor(
-    mapping_input,
+    mapping_default,
     use_container_width=True,
-    key="co_po_mapping",
+    key="mapping_editor",
     column_config={
         po: st.column_config.NumberColumn(
             po,
@@ -247,15 +252,18 @@ mapping = mapping_input.astype(float)
 
 st.divider()
 
-# --------------------------------------------------
-# 6. STUDENT MARKS INPUT
-# --------------------------------------------------
+# ==================================================
+# 7. STUDENT MARKS INPUT
+# ==================================================
 
-st.header("6. Student Assessment Marks")
+st.header("7. Student Assessment Marks")
 
 st.write(
-    "Enter each student's LE1 and LM1 marks as percentages "
-    "(0 to 100)."
+    "Enter the marks obtained by each student in PA1, PA2, LE1 and LE2."
+)
+
+st.caption(
+    "Enter marks as percentages from 0 to 100."
 )
 
 number_of_students = st.number_input(
@@ -268,65 +276,72 @@ number_of_students = st.number_input(
 
 student_data = pd.DataFrame({
     "Student": [
-        f"Student {i+1}" for i in range(int(number_of_students))
+        f"Student {i+1}"
+        for i in range(int(number_of_students))
     ],
-    "LE1": [70.0] * int(number_of_students),
-    "LM1": [75.0] * int(number_of_students)
+    "PA1": [70.0] * int(number_of_students),
+    "PA2": [75.0] * int(number_of_students),
+    "LE1": [80.0] * int(number_of_students),
+    "LE2": [85.0] * int(number_of_students)
 })
 
 student_input = st.data_editor(
     student_data,
     use_container_width=True,
     num_rows="fixed",
-    key="student_marks",
+    key="student_editor",
     column_config={
         "Student": st.column_config.TextColumn(
             "Student Name"
         ),
-        "LE1": st.column_config.NumberColumn(
-            "LE1 (%)",
-            min_value=0.0,
-            max_value=100.0,
-            step=1.0
+        "PA1": st.column_config.NumberColumn(
+            "PA1 (%)", min_value=0.0, max_value=100.0
         ),
-        "LM1": st.column_config.NumberColumn(
-            "LM1 (%)",
-            min_value=0.0,
-            max_value=100.0,
-            step=1.0
+        "PA2": st.column_config.NumberColumn(
+            "PA2 (%)", min_value=0.0, max_value=100.0
+        ),
+        "LE1": st.column_config.NumberColumn(
+            "LE1 (%)", min_value=0.0, max_value=100.0
+        ),
+        "LE2": st.column_config.NumberColumn(
+            "LE2 (%)", min_value=0.0, max_value=100.0
         )
     }
 )
 
 st.divider()
 
-# --------------------------------------------------
-# 7. CALCULATE CO ATTAINMENT
-# --------------------------------------------------
+# ==================================================
+# 8. STUDENT-WISE CO ATTAINMENT
+# ==================================================
 
-st.header("7. Student-wise CO Attainment")
-
-# LE and LM are the student-level assessments entered above.
-# Their CO allocations are used as weights.
+st.header("8. Student-wise CO Attainment")
 
 student_co_results = []
 
-le_weights = allocation.loc["LE", CO_NAMES]
-lm_weights = allocation.loc["LM", CO_NAMES]
-
 for _, student in student_input.iterrows():
 
-    result = {"Student": student["Student"]}
+    result = {
+        "Student": student["Student"]
+    }
 
     for co in CO_NAMES:
 
-        total_weight = le_weights[co] + lm_weights[co]
+        numerator = 0.0
+        denominator = 0.0
 
-        if total_weight > 0:
-            attainment = (
-                student["LE1"] * le_weights[co]
-                + student["LM1"] * lm_weights[co]
-            ) / total_weight
+        for assessment in ASSESSMENTS:
+
+            weight = allocation.loc[assessment, co]
+
+            numerator += (
+                float(student[assessment]) * weight
+            )
+
+            denominator += weight
+
+        if denominator > 0:
+            attainment = numerator / denominator
         else:
             attainment = 0.0
 
@@ -341,18 +356,18 @@ st.dataframe(
     use_container_width=True
 )
 
-# Average CO attainment across students
+# Average attainment of each CO
 average_co = co_results[CO_NAMES].mean()
 
 st.subheader("Average CO Attainment")
 
 co_summary = pd.DataFrame({
     "CO": CO_NAMES,
-    "Average Attainment (%)": [
-        average_co[co] for co in CO_NAMES
-    ],
     "CO Weight": [
         co_weights[co] for co in CO_NAMES
+    ],
+    "Average Attainment (%)": [
+        average_co[co] for co in CO_NAMES
     ]
 })
 
@@ -361,14 +376,13 @@ st.dataframe(
     use_container_width=True
 )
 
-# --------------------------------------------------
-# 8. AUTOMATIC CO-PO ASSESSMENT MATRIX
-# --------------------------------------------------
+st.divider()
 
-st.header("8. CO–PO Assessment Matrix")
+# ==================================================
+# 9. CO-PO ASSESSMENT MATRIX
+# ==================================================
 
-# Calculate weighted CO contribution to each PO.
-# Normalize by the total mapping strength for each PO.
+st.header("9. CO–PO Assessment Matrix")
 
 co_po_matrix = pd.DataFrame(
     0.0,
@@ -381,20 +395,28 @@ for po in PO_NAMES:
     denominator = mapping[po].sum()
 
     if denominator > 0:
+
         for co in CO_NAMES:
+
             co_po_matrix.loc[co, po] = (
-                average_co[co] * mapping.loc[co, po]
+                average_co[co]
+                * mapping.loc[co, po]
                 / denominator
             )
 
-st.subheader("CO Contribution to PO Attainment")
+st.subheader("CO Contribution to Each PO")
 
 st.dataframe(
     co_po_matrix.round(2),
     use_container_width=True
 )
 
-# Calculate PO attainment
+# ==================================================
+# 10. PO ATTAINMENT
+# ==================================================
+
+st.header("10. Programme Outcome Attainment")
+
 po_attainment = {}
 
 for po in PO_NAMES:
@@ -402,12 +424,12 @@ for po in PO_NAMES:
     denominator = mapping[po].sum()
 
     if denominator > 0:
-        po_attainment[po] = (
-            sum(
-                average_co[co] * mapping.loc[co, po]
-                for co in CO_NAMES
-            ) / denominator
-        )
+
+        po_attainment[po] = sum(
+            average_co[co] * mapping.loc[co, po]
+            for co in CO_NAMES
+        ) / denominator
+
     else:
         po_attainment[po] = 0.0
 
@@ -419,89 +441,87 @@ po_summary = pd.DataFrame({
     "PO Attainment (%)": [
         po_attainment[po] for po in PO_NAMES
     ],
-    "Weighted PO Marks": [
+    "Weighted PO Contribution": [
         po_attainment[po] * po_weights[po] / 100
         for po in PO_NAMES
     ]
 })
-
-st.subheader("Programme Outcome Attainment")
 
 st.dataframe(
     po_summary.round(2),
     use_container_width=True
 )
 
-# --------------------------------------------------
-# 9. DASHBOARD CHARTS
-# --------------------------------------------------
+st.divider()
 
-st.header("9. Attainment Dashboard")
+# ==================================================
+# 11. DASHBOARD CHARTS
+# ==================================================
 
-chart_col1, chart_col2 = st.columns(2)
+st.header("11. Attainment Dashboard")
 
-with chart_col1:
+col1, col2 = st.columns(2)
+
+with col1:
+
     st.subheader("CO Attainment")
+
     st.bar_chart(
         co_summary.set_index("CO")[
             "Average Attainment (%)"
         ]
     )
 
-with chart_col2:
+with col2:
+
     st.subheader("PO Attainment")
+
     st.bar_chart(
         po_summary.set_index("PO")[
             "PO Attainment (%)"
         ]
     )
 
-# --------------------------------------------------
-# 10. DOWNLOAD RESULTS
-# --------------------------------------------------
+# ==================================================
+# 12. DOWNLOAD RESULTS
+# ==================================================
 
 st.divider()
 
-st.header("10. Download Results")
+st.header("12. Download Results")
 
-co_csv = co_summary.to_csv(index=False).encode("utf-8")
+col1, col2 = st.columns(2)
 
-po_csv = po_summary.to_csv(index=False).encode("utf-8")
+with col1:
 
-matrix_csv = co_po_matrix.to_csv().encode("utf-8")
-
-student_csv = co_results.to_csv(index=False).encode("utf-8")
-
-download_col1, download_col2 = st.columns(2)
-
-with download_col1:
     st.download_button(
         "Download CO Results",
-        co_csv,
+        co_summary.to_csv(index=False).encode("utf-8"),
         "CO_Attainment.csv",
         "text/csv"
     )
 
     st.download_button(
         "Download PO Results",
-        po_csv,
+        po_summary.to_csv(index=False).encode("utf-8"),
         "PO_Attainment.csv",
         "text/csv"
     )
 
-with download_col2:
+with col2:
+
     st.download_button(
-        "Download CO-PO Matrix",
-        matrix_csv,
+        "Download CO–PO Matrix",
+        co_po_matrix.to_csv().encode("utf-8"),
         "CO_PO_Matrix.csv",
         "text/csv"
     )
 
     st.download_button(
         "Download Student Results",
-        student_csv,
+        co_results.to_csv(index=False).encode("utf-8"),
         "Student_CO_Attainment.csv",
         "text/csv"
     )
 
-st.success("Dashboard calculations completed.")
+st.success("CO–PO Assessment Dashboard calculated successfully.")
