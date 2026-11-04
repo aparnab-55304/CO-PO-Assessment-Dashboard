@@ -1,7 +1,6 @@
 
 import streamlit as st
 import pandas as pd
-import numpy as np
 from io import BytesIO
 
 # =========================================================
@@ -15,12 +14,10 @@ st.set_page_config(
 )
 
 st.title("CO–PO Assessment Summary Dashboard")
-st.caption(
-    "Automated Course Outcome and Programme Outcome Assessment"
-)
+st.caption("Automated Course Outcome and Programme Outcome Assessment")
 
 # =========================================================
-# 2. SESSION STATE AND RESET
+# 2. RESET
 # =========================================================
 
 if "reset_count" not in st.session_state:
@@ -33,263 +30,67 @@ if st.button("🔄 Reset Dashboard"):
 reset_id = st.session_state.reset_count
 
 # =========================================================
-# 3. EXCEL UPLOAD
+# 3. COURSE DETAILS
 # =========================================================
 
-st.header("1. Upload Course Information")
-
-uploaded_file = st.file_uploader(
-    "Upload Course Group Excel File",
-    type=["xlsx", "xls"],
-    key=f"course_upload_{reset_id}"
-)
-
-if uploaded_file is None:
-    st.info("Please upload the Course_Group_Dummy.xlsx file.")
-    st.stop()
-
-
-@st.cache_data
-def load_course_data(file_bytes):
-
-    excel_file = BytesIO(file_bytes)
-
-    # The supplied workbook has its headers in row 2.
-    df = pd.read_excel(
-        excel_file,
-        sheet_name=0,
-        header=1
-    )
-
-    df.columns = df.columns.astype(str).str.strip()
-
-    # Fallback if the workbook uses row 1 as the header.
-    if "Program Code" not in df.columns:
-        df = pd.read_excel(
-            BytesIO(file_bytes),
-            sheet_name=0,
-            header=0
-        )
-        df.columns = df.columns.astype(str).str.strip()
-
-    return df
-
-
-try:
-    course_data = load_course_data(uploaded_file.getvalue())
-
-except Exception as e:
-    st.error(f"Unable to read the Excel file: {e}")
-    st.stop()
-
-
-# =========================================================
-# 4. IDENTIFY EXCEL COLUMNS
-# =========================================================
-
-required_columns = [
-    "Program Code",
-    "Program"
-]
-
-missing_columns = [
-    col for col in required_columns
-    if col not in course_data.columns
-]
-
-if missing_columns:
-    st.error(
-        "The uploaded Excel file is missing these columns: "
-        + ", ".join(missing_columns)
-    )
-    st.stop()
-
-
-# Department column
-if "Handling Department" in course_data.columns:
-    department_column = "Handling Department"
-
-elif "Teaching Department" in course_data.columns:
-    department_column = "Teaching Department"
-
-else:
-    st.error("Department column not found in the uploaded file.")
-    st.stop()
-
-
-# Clean important fields
-course_data = course_data.dropna(
-    subset=["Program Code", "Program", department_column]
-).copy()
-
-for col in ["Program Code", "Program", department_column]:
-    course_data[col] = course_data[col].astype(str).str.strip()
-
-
-# =========================================================
-# 5. COURSE SELECTION
-# =========================================================
-
-st.header("2. Course Details")
+st.header("1. Course Details")
 
 col1, col2 = st.columns(2)
 
 with col1:
 
-    departments = sorted(
-        course_data[department_column].unique().tolist()
-    )
+    department_options = [
+        "Department of English",
+        "Department of Commerce",
+        "Other"
+    ]
 
     selected_department = st.selectbox(
         "Select Department",
-        departments,
+        department_options,
         key=f"department_{reset_id}"
     )
 
-    department_data = course_data[
-        course_data[department_column] == selected_department
-    ].copy()
+    if selected_department == "Other":
+        selected_department = st.text_input(
+            "Enter Department Name",
+            key=f"other_department_{reset_id}"
+        )
 
-    course_names = sorted(
-        department_data["Program"].unique().tolist()
-    )
-
-    selected_course_name = st.selectbox(
-        "Select Course Name",
-        course_names,
+    course_name = st.text_input(
+        "Course Name",
+        placeholder="Enter course name",
         key=f"course_name_{reset_id}"
     )
 
-
 with col2:
 
-    name_data = department_data[
-        department_data["Program"] == selected_course_name
-    ].copy()
-
-    course_codes = sorted(
-        name_data["Program Code"].unique().tolist()
-    )
-
-    selected_course_code = st.selectbox(
-        "Select Course Code",
-        course_codes,
+    course_code = st.text_input(
+        "Course Code",
+        placeholder="Enter course code",
         key=f"course_code_{reset_id}"
     )
 
-    # Semester selection
-    if "Semester" in course_data.columns:
-
-        semester_values = (
-            course_data["Semester"]
-            .dropna()
-            .astype(str)
-            .unique()
-            .tolist()
-        )
-
-        semester_values = sorted(semester_values)
-
-        selected_semester = st.selectbox(
-            "Select Semester",
-            semester_values,
-            key=f"semester_{reset_id}"
-        )
-
-    else:
-
-        selected_semester = st.selectbox(
-            "Select Semester",
-            [f"Semester {i}" for i in range(1, 9)],
-            key=f"semester_{reset_id}"
-        )
-
-
-selected_course_data = name_data[
-    name_data["Program Code"] == selected_course_code
-].copy()
-
-
-# If Semester exists, filter the selected semester when possible.
-if "Semester" in selected_course_data.columns:
-
-    semester_filtered = selected_course_data[
-        selected_course_data["Semester"].astype(str)
-        == str(selected_semester)
-    ]
-
-    if not semester_filtered.empty:
-        selected_course_data = semester_filtered
-
-
-if selected_course_data.empty:
-    st.error("No matching course record was found.")
-    st.stop()
-
-
-course_record = selected_course_data.iloc[0]
-
-
-# =========================================================
-# 6. DISPLAY COURSE INFORMATION
-# =========================================================
-
-st.subheader("Selected Course Information")
-
-info1, info2, info3 = st.columns(3)
-
-info1.metric("Department", selected_department)
-info2.metric("Course Code", selected_course_code)
-info3.metric("Semester", selected_semester)
-
-st.write("**Course Name:**", selected_course_name)
-
-
-# =========================================================
-# 7. DETERMINE NUMBER OF COs
-# =========================================================
-
-st.header("3. Course Outcomes")
-
-if "CO" in selected_course_data.columns:
-
-    co_value = pd.to_numeric(
-        selected_course_data["CO"],
-        errors="coerce"
-    ).dropna()
-
-    if not co_value.empty:
-        number_of_cos = int(co_value.iloc[0])
-    else:
-        number_of_cos = 0
-
-else:
-    number_of_cos = 0
-
-
-if number_of_cos <= 0:
-
-    st.warning(
-        "The selected course has no CO count in the Excel file. "
-        "Please enter the number of COs manually."
+    semester = st.selectbox(
+        "Select Semester",
+        [f"Semester {i}" for i in range(1, 9)],
+        key=f"semester_{reset_id}"
     )
 
-    number_of_cos = st.number_input(
-        "Enter Number of Course Outcomes",
-        min_value=1,
-        max_value=15,
-        value=4,
-        step=1,
-        key=f"manual_cos_{reset_id}"
-    )
+# =========================================================
+# 4. COURSE OUTCOMES
+# =========================================================
 
-else:
+st.header("2. Course Outcomes")
 
-    st.success(
-        f"Number of Course Outcomes identified from Excel: "
-        f"{number_of_cos}"
-    )
-
+number_of_cos = st.number_input(
+    "Enter Number of Course Outcomes",
+    min_value=1,
+    max_value=15,
+    value=4,
+    step=1,
+    key=f"number_cos_{reset_id}"
+)
 
 number_of_cos = int(number_of_cos)
 
@@ -301,16 +102,11 @@ PO_NAMES = ["PO1", "PO2"]
 
 ASSESSMENTS = ["PA1", "PA2", "LE1", "LE2"]
 
-
 # =========================================================
-# 8. CO WEIGHTS
+# 5. CO WEIGHTS
 # =========================================================
 
-st.header("4. CO Weight Allocation")
-
-st.write(
-    "Enter the weight assigned to each Course Outcome."
-)
+st.header("3. CO Weight Allocation")
 
 co_weight_df = pd.DataFrame({
     "Course Outcome": CO_NAMES,
@@ -319,7 +115,7 @@ co_weight_df = pd.DataFrame({
 
 co_weights_table = st.data_editor(
     co_weight_df,
-    key=f"co_weights_{reset_id}_{selected_course_code}",
+    key=f"co_weights_{reset_id}_{number_of_cos}",
     hide_index=True,
     width="stretch",
     disabled=["Course Outcome"],
@@ -339,20 +135,20 @@ co_weights = pd.Series(
     dtype=float
 )
 
-st.caption(
-    f"Total CO Weight: {co_weights.sum():.2f}"
+st.metric(
+    "Total CO Weight",
+    f"{co_weights.sum():.2f}"
 )
 
-
 # =========================================================
-# 9. ASSESSMENT COVERAGE AND WEIGHTS
+# 6. ASSESSMENT–CO COVERAGE MATRIX
 # =========================================================
 
-st.header("5. Assessment–CO Coverage Matrix")
+st.header("4. Assessment–CO Coverage Matrix")
 
 st.write(
-    "Enter the assessment weight and select the COs covered "
-    "by each assessment. All values are editable."
+    "Enter the weight and maximum marks for each assessment. "
+    "Select the COs covered by each assessment."
 )
 
 assessment_rows = []
@@ -366,10 +162,9 @@ for assessment in ASSESSMENTS:
     }
 
     for co in CO_NAMES:
-        row[co] = 0
+        row[co] = False
 
     assessment_rows.append(row)
-
 
 assessment_df = pd.DataFrame(assessment_rows)
 
@@ -403,20 +198,14 @@ for co in CO_NAMES:
         )
     )
 
-
 assessment_matrix = st.data_editor(
     assessment_df,
-    key=f"assessment_matrix_{reset_id}_{selected_course_code}_{number_of_cos}",
+    key=f"assessment_{reset_id}_{number_of_cos}",
     hide_index=True,
     width="stretch",
     disabled=["Assessment"],
     column_config=assessment_column_config
 )
-
-
-# =========================================================
-# 10. DISPLAY WEIGHT TOTALS
-# =========================================================
 
 assessment_weight_total = pd.to_numeric(
     assessment_matrix["Assessment Weight"],
@@ -428,16 +217,15 @@ st.metric(
     f"{assessment_weight_total:.2f}"
 )
 
-
 # =========================================================
-# 11. CO–PO MAPPING MATRIX
+# 7. CO–PO MAPPING
 # =========================================================
 
-st.header("6. CO–PO Mapping Matrix")
+st.header("5. CO–PO Mapping Matrix")
 
 st.write(
     "Enter the mapping strength between each CO and PO. "
-    "Use 0 for no mapping and positive values for mapped outcomes."
+    "Use 0 for no mapping."
 )
 
 mapping_df = pd.DataFrame({
@@ -448,15 +236,11 @@ mapping_df = pd.DataFrame({
 
 mapping_table = st.data_editor(
     mapping_df,
-    key=f"mapping_{reset_id}_{selected_course_code}_{number_of_cos}",
+    key=f"mapping_{reset_id}_{number_of_cos}",
     hide_index=True,
     width="stretch",
     disabled=["Course Outcome"],
     column_config={
-        "Course Outcome": st.column_config.TextColumn(
-            "Course Outcome",
-            disabled=True
-        ),
         "PO1": st.column_config.NumberColumn(
             "PO1",
             min_value=0.0,
@@ -474,12 +258,11 @@ mapping_values = mapping_table.set_index(
     "Course Outcome"
 )[PO_NAMES].astype(float)
 
-
 # =========================================================
-# 12. PO WEIGHTS
+# 8. PO WEIGHTS
 # =========================================================
 
-st.header("7. Programme Outcome Weights")
+st.header("6. Programme Outcome Weights")
 
 po_weight_df = pd.DataFrame({
     "Programme Outcome": PO_NAMES,
@@ -488,7 +271,7 @@ po_weight_df = pd.DataFrame({
 
 po_weight_table = st.data_editor(
     po_weight_df,
-    key=f"po_weights_{reset_id}_{selected_course_code}",
+    key=f"po_weights_{reset_id}",
     hide_index=True,
     width="stretch",
     disabled=["Programme Outcome"],
@@ -508,19 +291,19 @@ po_weights = pd.Series(
     dtype=float
 )
 
-st.caption(
-    f"Total PO Weight: {po_weights.sum():.2f}"
+st.metric(
+    "Total PO Weight",
+    f"{po_weights.sum():.2f}"
 )
 
-
 # =========================================================
-# 13. STUDENT MARKS INPUT
+# 9. STUDENT MARKS
 # =========================================================
 
-st.header("8. Student Assessment Marks")
+st.header("7. Student Assessment Marks")
 
 student_count = st.number_input(
-    "Enter Number of Students",
+    "Number of Students",
     min_value=1,
     max_value=500,
     value=10,
@@ -537,7 +320,8 @@ st.write(
 
 marks_df = pd.DataFrame({
     "Student": [
-        f"Student {i}" for i in range(1, student_count + 1)
+        f"Student {i}"
+        for i in range(1, student_count + 1)
     ],
     "PA1": [0.0] * student_count,
     "PA2": [0.0] * student_count,
@@ -563,22 +347,20 @@ for assessment in ASSESSMENTS:
         )
     )
 
-
 student_marks = st.data_editor(
     marks_df,
-    key=f"student_marks_{reset_id}_{selected_course_code}_{student_count}",
+    key=f"student_marks_{reset_id}_{student_count}",
     hide_index=True,
     width="stretch",
     disabled=["Student"],
     column_config=marks_column_config
 )
 
-
 # =========================================================
-# 14. CALCULATE ASSESSMENT PERCENTAGES
+# 10. CALCULATION BUTTON
 # =========================================================
 
-st.header("9. Calculate CO and PO Attainment")
+st.header("8. Calculate CO and PO Attainment")
 
 calculate_button = st.button(
     "Calculate CO–PO Attainment",
@@ -586,6 +368,9 @@ calculate_button = st.button(
     width="stretch"
 )
 
+# =========================================================
+# 11. EXCEL DOWNLOAD FUNCTION
+# =========================================================
 
 def create_excel_download(sheets):
 
@@ -608,20 +393,29 @@ def create_excel_download(sheets):
 
     return output
 
+# =========================================================
+# 12. CALCULATIONS
+# =========================================================
 
 if calculate_button:
 
     errors = []
 
     # ---------------------------------------------
-    # Validate CO weights
+    # Course details validation
     # ---------------------------------------------
 
-    if (co_weights < 0).any():
-        errors.append("CO weights cannot be negative.")
+    if not selected_department:
+        errors.append("Enter or select a department.")
+
+    if not course_name.strip():
+        errors.append("Enter the course name.")
+
+    if not course_code.strip():
+        errors.append("Enter the course code.")
 
     # ---------------------------------------------
-    # Validate assessment weights
+    # Assessment values
     # ---------------------------------------------
 
     assessment_weights = pd.to_numeric(
@@ -640,75 +434,79 @@ if calculate_button:
     if (maximum_marks < 0).any():
         errors.append("Maximum marks cannot be negative.")
 
+    if (co_weights < 0).any():
+        errors.append("CO weights cannot be negative.")
+
+    if (po_weights < 0).any():
+        errors.append("PO weights cannot be negative.")
+
+    # ---------------------------------------------
+    # Validate coverage and maximum marks
+    # ---------------------------------------------
+
+    for _, row in assessment_matrix.iterrows():
+
+        assessment = row["Assessment"]
+        weight = float(row["Assessment Weight"])
+        max_mark = float(row["Maximum Marks"])
+
+        covered_cos = [
+            co for co in CO_NAMES
+            if bool(row[co])
+        ]
+
+        if weight > 0 and max_mark <= 0:
+            errors.append(
+                f"Enter positive maximum marks for {assessment}."
+            )
+
+        if weight > 0 and not covered_cos:
+            errors.append(
+                f"Select at least one CO for {assessment}."
+            )
+
+        if weight > 0 and covered_cos:
+
+            denominator = sum(
+                co_weights[co] for co in covered_cos
+            )
+
+            if denominator <= 0:
+                errors.append(
+                    f"The selected COs for {assessment} "
+                    "must have positive total CO weight."
+                )
+
     # ---------------------------------------------
     # Validate student marks
     # ---------------------------------------------
 
     for assessment in ASSESSMENTS:
 
-        max_mark = maximum_marks[
-            assessment_matrix["Assessment"] == assessment
-        ].iloc[0]
-
-        if max_mark <= 0:
-            if assessment_weights[
+        max_mark = float(
+            maximum_marks[
                 assessment_matrix["Assessment"] == assessment
-            ].iloc[0] > 0:
-                errors.append(
-                    f"Enter a positive maximum mark for {assessment}."
-                )
+            ].iloc[0]
+        )
 
-        else:
+        if (student_marks[assessment] < 0).any():
+            errors.append(
+                f"{assessment} marks cannot be negative."
+            )
 
-            if (
-                student_marks[assessment] < 0
-            ).any():
-                errors.append(
-                    f"{assessment} marks cannot be negative."
-                )
+        if max_mark > 0:
 
-            if (
-                student_marks[assessment] > max_mark
-            ).any():
+            if (student_marks[assessment] > max_mark).any():
                 errors.append(
-                    f"Some {assessment} marks exceed the maximum marks."
+                    f"{assessment} marks exceed maximum marks."
                 )
 
     # ---------------------------------------------
-    # Validate assessment coverage
+    # Validate mapping
     # ---------------------------------------------
 
-    for _, row in assessment_matrix.iterrows():
-
-        if row["Assessment Weight"] > 0:
-
-            covered = [
-                co for co in CO_NAMES
-                if bool(row[co])
-            ]
-
-            if len(covered) == 0:
-
-                errors.append(
-                    f"{row['Assessment']} has a positive weight "
-                    "but no CO has been selected."
-                )
-
-            elif sum(
-                co_weights[co] for co in covered
-            ) <= 0:
-
-                errors.append(
-                    f"{row['Assessment']} covers COs whose "
-                    "total CO weight is zero."
-                )
-
-    # ---------------------------------------------
-    # Validate PO weights and mapping
-    # ---------------------------------------------
-
-    if (po_weights < 0).any():
-        errors.append("PO weights cannot be negative.")
+    if (mapping_values < 0).any().any():
+        errors.append("CO–PO mapping values cannot be negative.")
 
     if errors:
 
@@ -717,9 +515,9 @@ if calculate_button:
 
         st.stop()
 
-    # =====================================================
-    # 15. ASSESSMENT–CO ALLOCATION MATRIX
-    # =====================================================
+    # =================================================
+    # 13. ASSESSMENT–CO ALLOCATION MATRIX
+    # =================================================
 
     allocation_matrix = pd.DataFrame(
         0.0,
@@ -743,28 +541,24 @@ if calculate_button:
                 co_weights[co] for co in covered_cos
             )
 
-            if denominator > 0:
+            for co in covered_cos:
 
-                for co in covered_cos:
-
-                    allocation_matrix.loc[
-                        assessment, co
-                    ] = (
-                        weight
-                        * co_weights[co]
-                        / denominator
-                    )
+                allocation_matrix.loc[assessment, co] = (
+                    weight
+                    * co_weights[co]
+                    / denominator
+                )
 
     st.subheader("Assessment–CO Allocation Matrix")
 
     st.dataframe(
-        allocation_matrix,
+        allocation_matrix.round(2),
         width="stretch"
     )
 
-    # =====================================================
-    # 16. STUDENT MARKS TO PERCENTAGES
-    # =====================================================
+    # =================================================
+    # 14. RAW MARKS TO PERCENTAGES
+    # =================================================
 
     student_percentages = pd.DataFrame(
         index=student_marks.index
@@ -790,7 +584,7 @@ if calculate_button:
 
         else:
 
-            student_percentages[assessment] = np.nan
+            student_percentages[assessment] = float("nan")
 
     st.subheader("Student Assessment Percentage")
 
@@ -799,9 +593,9 @@ if calculate_button:
         width="stretch"
     )
 
-    # =====================================================
-    # 17. STUDENT-WISE CO ATTAINMENT
-    # =====================================================
+    # =================================================
+    # 15. STUDENT-WISE CO ATTAINMENT
+    # =================================================
 
     student_co_attainment = pd.DataFrame(
         index=student_marks.index
@@ -813,9 +607,9 @@ if calculate_button:
 
     for co in CO_NAMES:
 
-        allocated_weights = allocation_matrix[co]
-
-        total_allocated_weight = allocated_weights.sum()
+        total_allocated_weight = (
+            allocation_matrix[co].sum()
+        )
 
         if total_allocated_weight > 0:
 
@@ -833,8 +627,7 @@ if calculate_button:
                 if allocated_weight > 0:
 
                     weighted_scores += (
-                        student_percentages[assessment]
-                        .fillna(0)
+                        student_percentages[assessment].fillna(0)
                         * allocated_weight
                     )
 
@@ -844,7 +637,7 @@ if calculate_button:
 
         else:
 
-            student_co_attainment[co] = np.nan
+            student_co_attainment[co] = float("nan")
 
     st.subheader("Student-wise CO Attainment (%)")
 
@@ -853,9 +646,9 @@ if calculate_button:
         width="stretch"
     )
 
-    # =====================================================
-    # 18. CO SUMMARY
-    # =====================================================
+    # =================================================
+    # 16. CO SUMMARY
+    # =================================================
 
     co_summary = pd.DataFrame({
         "CO": CO_NAMES,
@@ -884,9 +677,9 @@ if calculate_button:
         width="stretch"
     )
 
-    # =====================================================
-    # 19. CO–PO CONTRIBUTION MATRIX
-    # =====================================================
+    # =================================================
+    # 17. CO–PO CONTRIBUTION MATRIX
+    # =================================================
 
     co_po_matrix = pd.DataFrame(
         index=CO_NAMES,
@@ -896,26 +689,21 @@ if calculate_button:
 
     for co in CO_NAMES:
 
-        co_attainment = (
-            co_summary.loc[
-                co_summary["CO"] == co,
-                "CO Attainment (%)"
-            ].iloc[0]
-        )
+        attainment = co_summary.loc[
+            co_summary["CO"] == co,
+            "CO Attainment (%)"
+        ].iloc[0]
 
         for po in PO_NAMES:
 
-            mapping_value = mapping_values.loc[co, po]
+            mapping = mapping_values.loc[co, po]
 
-            if pd.notna(co_attainment):
-
+            if pd.notna(attainment):
                 co_po_matrix.loc[co, po] = (
-                    co_attainment * mapping_value
+                    attainment * mapping
                 )
-
             else:
-
-                co_po_matrix.loc[co, po] = np.nan
+                co_po_matrix.loc[co, po] = float("nan")
 
     st.subheader("CO–PO Weighted Contribution Matrix")
 
@@ -924,9 +712,9 @@ if calculate_button:
         width="stretch"
     )
 
-    # =====================================================
-    # 20. PO ATTAINMENT
-    # =====================================================
+    # =================================================
+    # 18. PO ATTAINMENT
+    # =================================================
 
     po_attainment_values = {}
 
@@ -943,12 +731,11 @@ if calculate_button:
 
             mapping = mapping_values.loc[co, po]
 
-            if (
-                pd.notna(attainment)
-                and mapping > 0
-            ):
+            if pd.notna(attainment) and mapping > 0:
 
-                valid_cos.append((attainment, mapping))
+                valid_cos.append(
+                    (attainment, mapping)
+                )
 
         if valid_cos:
 
@@ -958,7 +745,8 @@ if calculate_button:
             )
 
             denominator = sum(
-                mapping for _, mapping in valid_cos
+                mapping
+                for _, mapping in valid_cos
             )
 
             po_attainment_values[po] = (
@@ -967,7 +755,7 @@ if calculate_button:
 
         else:
 
-            po_attainment_values[po] = np.nan
+            po_attainment_values[po] = float("nan")
 
     po_summary = pd.DataFrame({
         "PO": PO_NAMES,
@@ -992,9 +780,9 @@ if calculate_button:
         width="stretch"
     )
 
-    # =====================================================
-    # 21. OVERALL WEIGHTED PO ATTAINMENT
-    # =====================================================
+    # =================================================
+    # 19. OVERALL WEIGHTED PO ATTAINMENT
+    # =================================================
 
     positive_weight_pos = [
         po for po in PO_NAMES
@@ -1008,7 +796,7 @@ if calculate_button:
 
     if not positive_weight_pos:
 
-        overall_po_attainment = np.nan
+        overall_po_attainment = float("nan")
 
         st.warning(
             "Enter positive PO weights to calculate "
@@ -1017,12 +805,12 @@ if calculate_button:
 
     elif missing_pos:
 
-        overall_po_attainment = np.nan
+        overall_po_attainment = float("nan")
 
         st.warning(
-            "Overall PO attainment cannot be calculated because "
+            "Overall attainment cannot be calculated. "
+            "No valid attainment is available for: "
             + ", ".join(missing_pos)
-            + " has a positive weight but no valid attainment."
         )
 
     else:
@@ -1042,11 +830,11 @@ if calculate_button:
             f"{overall_po_attainment:.2f}%"
         )
 
-    # =====================================================
-    # 22. FINAL SUMMARY MATRIX
-    # =====================================================
+    # =================================================
+    # 20. FINAL SUMMARY MATRIX
+    # =================================================
 
-    st.header("10. Final CO–PO Summary Matrix")
+    st.header("9. Final CO–PO Summary Matrix")
 
     final_matrix = pd.DataFrame(
         index=CO_NAMES
@@ -1054,6 +842,11 @@ if calculate_button:
 
     final_matrix["CO Weight"] = [
         co_weights[co] for co in CO_NAMES
+    ]
+
+    final_matrix["Allocated Assessment Weight"] = [
+        allocation_matrix[co].sum()
+        for co in CO_NAMES
     ]
 
     final_matrix["CO Attainment (%)"] = [
@@ -1081,13 +874,53 @@ if calculate_button:
         width="stretch"
     )
 
-    # =====================================================
-    # 23. DOWNLOAD RESULTS
-    # =====================================================
+    # =================================================
+    # 21. COURSE SUMMARY
+    # =================================================
 
-    st.header("11. Download Assessment Results")
+    st.header("10. Course Summary")
+
+    course_summary = pd.DataFrame({
+        "Particulars": [
+            "Department",
+            "Course Name",
+            "Course Code",
+            "Semester",
+            "Number of COs",
+            "Number of Students",
+            "Overall Weighted PO Attainment (%)"
+        ],
+        "Details": [
+            selected_department,
+            course_name,
+            course_code,
+            semester,
+            number_of_cos,
+            student_count,
+            (
+                round(overall_po_attainment, 2)
+                if pd.notna(overall_po_attainment)
+                else "N/A"
+            )
+        ]
+    })
+
+    st.dataframe(
+        course_summary,
+        hide_index=True,
+        width="stretch"
+    )
+
+    # =================================================
+    # 22. DOWNLOAD EXCEL REPORT
+    # =================================================
+
+    st.header("11. Download Results")
 
     excel_sheets = {
+        "Course Details": course_summary.set_index(
+            "Particulars"
+        ),
         "CO Weights": co_weights_table.set_index(
             "Course Outcome"
         ),
@@ -1108,11 +941,26 @@ if calculate_button:
         "Final Summary": final_matrix
     }
 
-    excel_file = create_excel_download(excel_sheets)
+    output = BytesIO()
+
+    with pd.ExcelWriter(
+        output,
+        engine="openpyxl"
+    ) as writer:
+
+        for sheet_name, dataframe in excel_sheets.items():
+
+            dataframe.to_excel(
+                writer,
+                sheet_name=sheet_name[:31],
+                index=True
+            )
+
+    output.seek(0)
 
     st.download_button(
         label="📥 Download Complete Excel Report",
-        data=excel_file,
+        data=output,
         file_name="CO_PO_Assessment_Summary.xlsx",
         mime=(
             "application/vnd.openxmlformats-officedocument."
@@ -1120,6 +968,10 @@ if calculate_button:
         ),
         width="stretch"
     )
+
+    # =================================================
+    # 23. DOWNLOAD CSV
+    # =================================================
 
     csv_data = final_matrix.to_csv().encode("utf-8")
 
@@ -1134,4 +986,3 @@ if calculate_button:
     st.success(
         "CO–PO assessment calculations completed successfully."
     )
-
