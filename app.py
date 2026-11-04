@@ -15,9 +15,9 @@ st.set_page_config(
 st.title("CO–PO Assessment Summary Dashboard")
 st.caption("Automated Weighted Assessment–CO Summary Matrix")
 
-# =========================================================
+# =====================================================
 # COURSE DETAILS
-# =========================================================
+# =====================================================
 
 st.header("Course Details")
 
@@ -83,18 +83,22 @@ with col2:
 
 st.divider()
 
-
 # =====================================================
 # BASIC STRUCTURE
 # =====================================================
 
-CO_NAMES = ["CO1", "CO2", "CO3", "CO4"]
+ALL_CO_NAMES = ["CO1", "CO2", "CO3", "CO4", "CO5"]
+
 ASSESSMENTS = ["PA1", "PA2", "LE", "LM"]
 
-# CO weights
-DEFAULT_CO_WEIGHTS = [8.0, 8.0, 7.0, 7.0]
+DEFAULT_CO_WEIGHTS = {
+    "CO1": 8.0,
+    "CO2": 8.0,
+    "CO3": 5.0,
+    "CO4": 5.0,
+    "CO5": 4.0
+}
 
-# Assessment weights
 DEFAULT_ASSESSMENT_WEIGHTS = {
     "PA1": 4.0,
     "PA2": 4.0,
@@ -102,30 +106,42 @@ DEFAULT_ASSESSMENT_WEIGHTS = {
     "LM": 6.0
 }
 
-# Default assessment coverage
-default_coverage = pd.DataFrame({
-    "CO": CO_NAMES,
-    "PA1": [1, 1, 0, 0],
-    "PA2": [0, 0, 1, 1],
-    "LE": [1, 1, 1, 1],
-    "LM": [1, 1, 1, 1]
-})
-
 # =====================================================
-# 1. CO WEIGHTS
+# 1. COURSE OUTCOME SELECTION
 # =====================================================
 
-st.header("1. Course Outcome Weights")
+st.header("1. Course Outcome Selection")
 
-cols = st.columns(4)
+selected_cos = st.multiselect(
+    "Select applicable Course Outcomes",
+    options=ALL_CO_NAMES,
+    default=ALL_CO_NAMES
+)
+
+if not selected_cos:
+    st.warning("Please select at least one CO.")
+    st.stop()
+
+CO_NAMES = selected_cos
+
+# =====================================================
+# 2. CO WEIGHTS
+# =====================================================
+
+st.header("2. Course Outcome Weights")
+
 co_weights = {}
 
+cols = st.columns(min(len(CO_NAMES), 5))
+
 for i, co in enumerate(CO_NAMES):
-    with cols[i]:
+
+    with cols[i % len(cols)]:
+
         co_weights[co] = st.number_input(
             co,
             min_value=0.0,
-            value=DEFAULT_CO_WEIGHTS[i],
+            value=DEFAULT_CO_WEIGHTS[co],
             step=1.0,
             key=f"weight_{co}"
         )
@@ -137,16 +153,19 @@ if total_co_weight <= 0:
     st.stop()
 
 # =====================================================
-# 2. ASSESSMENT WEIGHTS
+# 3. ASSESSMENT WEIGHTS
 # =====================================================
 
-st.header("2. Assessment Weights")
+st.header("3. Assessment Weights")
 
-cols = st.columns(4)
 assessment_weights = {}
 
+cols = st.columns(4)
+
 for i, assessment in enumerate(ASSESSMENTS):
+
     with cols[i]:
+
         assessment_weights[assessment] = st.number_input(
             assessment,
             min_value=0.0,
@@ -156,10 +175,26 @@ for i, assessment in enumerate(ASSESSMENTS):
         )
 
 # =====================================================
-# 3. ASSESSMENT COVERAGE MATRIX
+# 4. ASSESSMENT COVERAGE MATRIX
 # =====================================================
 
-st.header("3. Assessment–CO Coverage Matrix")
+st.header("4. Assessment–CO Coverage Matrix")
+
+default_values = {
+    "CO1": [1, 0, 1, 1],
+    "CO2": [1, 0, 1, 1],
+    "CO3": [0, 1, 1, 1],
+    "CO4": [0, 1, 1, 1],
+    "CO5": [0, 0, 1, 1]
+}
+
+default_coverage = pd.DataFrame(
+    [
+        [co] + default_values[co]
+        for co in CO_NAMES
+    ],
+    columns=["CO"] + ASSESSMENTS
+)
 
 coverage_input = st.data_editor(
     default_coverage,
@@ -200,14 +235,12 @@ coverage = coverage_values.copy()
 coverage.index = coverage_input["CO"].tolist()
 
 # =====================================================
-# 4. AUTOMATIC SUMMARY MATRIX CALCULATION
+# 5. SUMMARY MATRIX CALCULATION
 # =====================================================
 
 st.divider()
-st.header("4. Assessment–CO Summary Matrix")
 
-# Rows = PA1, PA2, LE, LM
-# Columns = CO1, CO2, CO3, CO4
+st.header("5. Assessment–CO Summary Matrix")
 
 summary_matrix = pd.DataFrame(
     0.0,
@@ -225,9 +258,12 @@ for assessment in ASSESSMENTS:
     assessment_weight = assessment_weights[assessment]
 
     if assessment_weight > 0 and denominator <= 0:
+
         st.error(
-            f"{assessment} has positive weight but no valid CO allocation."
+            f"{assessment} has positive weight "
+            "but no valid CO allocation."
         )
+
         st.stop()
 
     if denominator > 0:
@@ -242,8 +278,10 @@ for assessment in ASSESSMENTS:
             )
 
 # =====================================================
-# 5. DISPLAY SUMMARY MATRIX
+# 6. DISPLAY SUMMARY MATRIX
 # =====================================================
+
+st.header("6. Final Summary Matrix")
 
 display_matrix = summary_matrix.copy()
 
@@ -257,10 +295,10 @@ st.dataframe(
 )
 
 # =====================================================
-# 6. VALIDATION
+# 7. VALIDATION
 # =====================================================
 
-st.subheader("Allocation Validation")
+st.header("7. Allocation Validation")
 
 col1, col2, col3 = st.columns(3)
 
@@ -283,17 +321,62 @@ with col3:
     )
 
 # =====================================================
-# 7. DOWNLOAD SUMMARY MATRIX
+# 8. COURSE DETAILS AND DOWNLOAD
 # =====================================================
 
 st.divider()
 
-csv = display_matrix.to_csv().encode("utf-8")
+st.header("8. Download Summary Matrix")
+
+course_details = pd.DataFrame({
+    "Parameter": [
+        "Department",
+        "Course Name",
+        "Course Code",
+        "Semester",
+        "Selected COs"
+    ],
+    "Details": [
+        department,
+        course_name,
+        course_code,
+        semester,
+        ", ".join(CO_NAMES)
+    ]
+})
+
+st.subheader("Course Information")
+
+st.dataframe(
+    course_details,
+    hide_index=True,
+    width="stretch"
+)
+
+# Include course information in the CSV output
+
+output_matrix = display_matrix.round(2).reset_index()
+output_matrix = output_matrix.rename(
+    columns={"index": "Assessment"}
+)
+
+csv = output_matrix.to_csv(index=False).encode("utf-8")
 
 st.download_button(
     label="Download Summary Matrix (CSV)",
     data=csv,
     file_name="CO_PO_Summary_Matrix.csv",
+    mime="text/csv"
+)
+
+# Download course information separately
+
+course_csv = course_details.to_csv(index=False).encode("utf-8")
+
+st.download_button(
+    label="Download Course Details (CSV)",
+    data=course_csv,
+    file_name="Course_Details.csv",
     mime="text/csv"
 )
 
