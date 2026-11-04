@@ -8,21 +8,20 @@ from io import BytesIO
 # =========================================================
 
 st.set_page_config(
-    page_title="CO Assessment Dashboard",
+    page_title="CO Assessment Summary Dashboard",
     page_icon="📊",
     layout="wide"
 )
 
-st.title("📊 CO Assessment Dashboard")
-st.caption("CO Assessment Summary Matrix and Student Assessment Data")
+st.title("📊 CO Assessment Summary Dashboard")
+st.caption("Automated CO-wise Assessment Weight Distribution")
 
 # =========================================================
-# RESET BUTTON
+# RESET
 # =========================================================
 
 if st.button("🔄 Reset Dashboard"):
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
+    st.session_state.clear()
     st.rerun()
 
 # =========================================================
@@ -52,7 +51,7 @@ with col2:
 
     semester = st.selectbox(
         "Semester",
-        options=list(range(1, 9))
+        list(range(1, 9))
     )
 
 st.divider()
@@ -61,7 +60,7 @@ st.divider()
 # COURSE OUTCOMES
 # =========================================================
 
-st.header("2. Course Outcomes (COs)")
+st.header("2. Course Outcomes")
 
 co_count = st.number_input(
     "Number of Course Outcomes",
@@ -71,30 +70,38 @@ co_count = st.number_input(
     step=1
 )
 
-co_names = [f"CO{i}" for i in range(1, int(co_count) + 1)]
+co_names = [
+    f"CO{i}" for i in range(1, int(co_count) + 1)
+]
 
-st.subheader("CO-wise Weight Allocation")
+# =========================================================
+# TEACHER-ASSIGNED CO WEIGHTS
+# =========================================================
+
+st.subheader("2.1 Teacher-Assigned CO Weights")
 
 st.write(
-    "Enter the weight assigned to each CO. "
-    "These weights determine how assessment weight is distributed "
-    "among the COs covered by an assessment."
+    "The teacher assigns the weight for each Course Outcome. "
+    "These weights are used to distribute the assessment weight "
+    "among the selected COs."
 )
 
-co_weight_default = pd.DataFrame({
-    "CO": co_names,
-    "Weight per CO": [0.0] * int(co_count)
+co_weight_data = pd.DataFrame({
+    "Course Outcome": co_names,
+    "Weight Assigned by Teacher": [0.0] * int(co_count)
 })
 
 co_weights_df = st.data_editor(
-    co_weight_default,
-    key=f"co_weights_{co_count}",
+    co_weight_data,
+    key=f"co_weight_editor_{co_count}",
     hide_index=True,
-    disabled=["CO"],
+    disabled=["Course Outcome"],
     column_config={
-        "CO": st.column_config.TextColumn("Course Outcome"),
-        "Weight per CO": st.column_config.NumberColumn(
-            "Weight per CO",
+        "Course Outcome": st.column_config.TextColumn(
+            "Course Outcome"
+        ),
+        "Weight Assigned by Teacher": st.column_config.NumberColumn(
+            "Weight Assigned by Teacher",
             min_value=0.0,
             step=0.5,
             format="%.2f"
@@ -105,30 +112,30 @@ co_weights_df = st.data_editor(
 
 co_weights = dict(
     zip(
-        co_weights_df["CO"],
-        co_weights_df["Weight per CO"]
+        co_weights_df["Course Outcome"],
+        co_weights_df["Weight Assigned by Teacher"]
     )
 )
 
-total_co_weight = sum(co_weights.values())
-
+# Total course weight
 total_course_weight = st.number_input(
     "Total Course Weight",
     min_value=0.0,
-    value=0.0,
-    step=1.0
+    value=30.0,
+    step=1.0,
+    help="Enter the total weight used for CCA calculation."
 )
 
 st.divider()
 
 # =========================================================
-# CO ASSESSMENT SUMMARY MATRIX
+# ASSESSMENT COVERAGE MATRIX
 # =========================================================
 
 st.header("3. CO Assessment Summary Matrix")
 
 st.write(
-    "Enter the weight of each assessment and select the COs "
+    "Enter the weight of each assessment and tick the COs "
     "covered by that assessment."
 )
 
@@ -141,6 +148,7 @@ assessment_columns = (
 assessment_data = []
 
 for assessment in assessment_names:
+
     row = {
         "Assessment": assessment,
         "Assessment Weight": 0.0
@@ -156,7 +164,7 @@ assessment_df = pd.DataFrame(
     columns=assessment_columns
 )
 
-column_config = {
+assessment_config = {
     "Assessment": st.column_config.TextColumn(
         "Assessment",
         disabled=True
@@ -170,25 +178,26 @@ column_config = {
 }
 
 for co in co_names:
-    column_config[co] = st.column_config.CheckboxColumn(
+
+    assessment_config[co] = st.column_config.CheckboxColumn(
         co,
-        help=f"Select if this assessment covers {co}"
+        help=f"Tick if {co} is covered by this assessment."
     )
 
 edited_assessment_df = st.data_editor(
     assessment_df,
-    key=f"assessment_grid_{co_count}",
+    key=f"assessment_editor_{co_count}",
     hide_index=True,
-    column_config=column_config,
     disabled=["Assessment"],
+    column_config=assessment_config,
     width="stretch"
 )
 
 # =========================================================
-# CALCULATE ASSESSMENT-CO DISTRIBUTION
+# CALCULATE CO-WISE ASSESSMENT WEIGHTS
 # =========================================================
 
-st.subheader("Calculated CO Assessment Summary")
+st.subheader("3.1 Calculated CO Assessment Summary")
 
 summary_rows = []
 
@@ -202,21 +211,25 @@ for _, row in edited_assessment_df.iterrows():
         if bool(row[co])
     ]
 
-    covered_weight = sum(
+    total_covered_co_weight = sum(
         co_weights[co] for co in covered_cos
     )
 
-    allocation = {
-        co: 0.0 for co in co_names
-    }
+    allocated_weights = {}
 
-    if covered_cos and covered_weight > 0:
+    for co in co_names:
 
-        for co in covered_cos:
+        if (
+            co in covered_cos
+            and total_covered_co_weight > 0
+        ):
 
-            allocation[co] = (
-                co_weights[co] / covered_weight
+            allocated_weights[co] = (
+                co_weights[co] / total_covered_co_weight
             ) * assessment_weight
+
+        else:
+            allocated_weights[co] = 0.0
 
     summary_row = {
         "Assessment": assessment,
@@ -224,17 +237,22 @@ for _, row in edited_assessment_df.iterrows():
     }
 
     for co in co_names:
-        summary_row[co] = allocation[co]
+        summary_row[
+            f"{co} (Assigned: {co_weights[co]:g})"
+        ] = allocated_weights[co]
 
     summary_row["TOTAL"] = sum(
-        allocation.values()
+        allocated_weights.values()
     )
 
     summary_rows.append(summary_row)
 
 summary_matrix = pd.DataFrame(summary_rows)
 
-# Total row
+# =========================================================
+# TOTAL ROW
+# =========================================================
+
 total_row = {
     "Assessment": "TOTAL",
     "Assessment Weight": edited_assessment_df[
@@ -243,33 +261,18 @@ total_row = {
 }
 
 for co in co_names:
-    total_row[co] = summary_matrix[co].sum()
+
+    col_name = f"{co} (Assigned: {co_weights[co]:g})"
+
+    total_row[col_name] = summary_matrix[col_name].sum()
 
 total_row["TOTAL"] = summary_matrix["TOTAL"].sum()
 
 summary_matrix = pd.concat(
-    [summary_matrix, pd.DataFrame([total_row])],
-    ignore_index=True
-)
-
-# CO-wise total row
-co_total_row = {
-    "Assessment": "CO-wise TOTAL",
-    "Assessment Weight": None
-}
-
-for co in co_names:
-    co_total_row[co] = summary_matrix.loc[
-        summary_matrix["Assessment"] != "CO-wise TOTAL",
-        co
-    ].sum()
-
-co_total_row["TOTAL"] = sum(
-    co_total_row[co] for co in co_names
-)
-
-summary_matrix = pd.concat(
-    [summary_matrix, pd.DataFrame([co_total_row])],
+    [
+        summary_matrix,
+        pd.DataFrame([total_row])
+    ],
     ignore_index=True
 )
 
@@ -279,11 +282,19 @@ st.dataframe(
     width="stretch"
 )
 
+st.caption(
+    "The number in each CO column heading represents the weight "
+    "assigned to that CO by the teacher. The cell values represent "
+    "the assessment weight allocated to that CO."
+)
+
+st.divider()
+
 # =========================================================
-# CO WEIGHT IN CCA
+# CO-WISE WEIGHT IN CCA
 # =========================================================
 
-st.subheader("CO-wise Weight in CCA")
+st.header("4. CO-wise Weight in CCA")
 
 total_assessment_weight = float(
     edited_assessment_df["Assessment Weight"].sum()
@@ -293,19 +304,22 @@ cca_rows = []
 
 for co in co_names:
 
-    co_weight = co_weights[co]
+    assigned_weight = co_weights[co]
 
     if total_course_weight > 0:
+
         cca_weight = (
-            co_weight / total_course_weight
+            assigned_weight / total_course_weight
         ) * total_assessment_weight
+
     else:
         cca_weight = 0.0
 
     cca_rows.append({
-        "CO": co,
-        "Weight per CO": co_weight,
+        "Course Outcome": co,
+        "Weight Assigned by Teacher": assigned_weight,
         "Total Course Weight": total_course_weight,
+        "Total Assessment Weight": total_assessment_weight,
         "Weight per CO in CCA": cca_weight
     })
 
@@ -321,9 +335,16 @@ st.dataframe(
 # VALIDATION
 # =========================================================
 
-if total_co_weight == 0:
+st.header("5. Validation")
+
+if total_course_weight == 0:
     st.warning(
-        "Enter positive CO weights to calculate the assessment distribution."
+        "Total Course Weight is zero. CCA weights cannot be calculated."
+    )
+
+if sum(co_weights.values()) == 0:
+    st.warning(
+        "Please assign positive weights to the Course Outcomes."
     )
 
 invalid_assessments = []
@@ -345,106 +366,18 @@ for _, row in edited_assessment_df.iterrows():
             invalid_assessments.append(row["Assessment"])
 
 if invalid_assessments:
+
     st.warning(
-        "Please select at least one CO with a positive CO weight for: "
+        "Please select COs with positive assigned weights for: "
         + ", ".join(invalid_assessments)
     )
 
-st.divider()
-
-# =========================================================
-# STUDENT ASSESSMENT DATA
-# =========================================================
-
-st.header("4. Student Assessment Data")
-
-st.write(
-    "Enter student-wise marks for PA1, PA2, LE1 and LE2. "
-    "Student names are not required."
-)
-
-student_count = st.number_input(
-    "Number of Students",
-    min_value=1,
-    max_value=200,
-    value=5,
-    step=1
-)
-
-st.subheader("Maximum Marks")
-
-max_marks = {}
-
-max_cols = st.columns(4)
-
-for i, assessment in enumerate(assessment_names):
-
-    with max_cols[i]:
-        max_marks[assessment] = st.number_input(
-            f"{assessment} Maximum Marks",
-            min_value=0.0,
-            value=0.0,
-            step=1.0,
-            key=f"max_marks_{assessment}"
-        )
-
-# Student marks grid
-student_data = {
-    "Student ID": [
-        f"Student {i + 1}"
-        for i in range(int(student_count))
-    ]
-}
-
-for assessment in assessment_names:
-    student_data[assessment] = [
-        0.0 for _ in range(int(student_count))
-    ]
-
-student_df = pd.DataFrame(student_data)
-
-student_column_config = {
-    "Student ID": st.column_config.TextColumn(
-        "Student ID",
-        disabled=True
-    )
-}
-
-for assessment in assessment_names:
-
-    student_column_config[assessment] = (
-        st.column_config.NumberColumn(
-            assessment,
-            min_value=0.0,
-            step=0.5,
-            format="%.2f"
-        )
-    )
-
-edited_student_df = st.data_editor(
-    student_df,
-    key=f"student_marks_{student_count}",
-    hide_index=True,
-    column_config=student_column_config,
-    disabled=["Student ID"],
-    num_rows="fixed",
-    width="stretch"
-)
-
-# Validate marks against maximum marks
-for assessment in assessment_names:
-
-    if max_marks[assessment] > 0:
-
-        if (
-            edited_student_df[assessment]
-            > max_marks[assessment]
-        ).any():
-
-            st.error(
-                f"Some student marks in {assessment} "
-                "exceed the maximum marks."
-            )
+if (
+    total_course_weight > 0
+    and sum(co_weights.values()) > 0
+    and not invalid_assessments
+):
+    st.success("CO assessment weight distribution is calculated.")
 
 st.divider()
 
@@ -452,7 +385,7 @@ st.divider()
 # DOWNLOAD EXCEL REPORT
 # =========================================================
 
-st.header("5. Download Dashboard Report")
+st.header("6. Download Summary")
 
 course_details = pd.DataFrame({
     "Field": [
@@ -460,21 +393,16 @@ course_details = pd.DataFrame({
         "Course Name",
         "Course Code",
         "Semester",
-        "Number of COs"
+        "Number of COs",
+        "Total Course Weight"
     ],
     "Value": [
         department,
         course_name,
         course_code,
         semester,
-        co_count
-    ]
-})
-
-max_marks_df = pd.DataFrame({
-    "Assessment": assessment_names,
-    "Maximum Marks": [
-        max_marks[a] for a in assessment_names
+        co_count,
+        total_course_weight
     ]
 })
 
@@ -493,7 +421,7 @@ with pd.ExcelWriter(
 
     co_weights_df.to_excel(
         writer,
-        sheet_name="CO Weights",
+        sheet_name="Teacher CO Weights",
         index=False
     )
 
@@ -511,29 +439,17 @@ with pd.ExcelWriter(
 
     cca_matrix.to_excel(
         writer,
-        sheet_name="CCA Weight",
-        index=False
-    )
-
-    max_marks_df.to_excel(
-        writer,
-        sheet_name="Maximum Marks",
-        index=False
-    )
-
-    edited_student_df.to_excel(
-        writer,
-        sheet_name="Student Marks",
+        sheet_name="CO Weight in CCA",
         index=False
     )
 
 st.download_button(
-    label="📥 Download Excel Report",
+    label="📥 Download CO Summary Excel",
     data=output.getvalue(),
-    file_name="CO_Assessment_Dashboard.xlsx",
+    file_name="CO_Assessment_Summary.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
 
-st.success(
-    "CO Assessment Summary Matrix and Student Assessment Data are ready."
+st.caption(
+    "CO Assessment Summary Dashboard"
 )
