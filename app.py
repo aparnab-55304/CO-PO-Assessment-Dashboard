@@ -14,10 +14,10 @@ st.set_page_config(
 )
 
 st.title("CO Assessment Summary Dashboard")
-st.caption("Automated Course Outcome Assessment Weight Summary")
+st.caption("CO-wise Assessment Weight Allocation")
 
 # =====================================================
-# RESET BUTTON
+# RESET
 # =====================================================
 
 if st.button("Reset Dashboard"):
@@ -33,26 +33,12 @@ st.header("1. Course Details")
 col1, col2 = st.columns(2)
 
 with col1:
-    department = st.text_input(
-        "Department",
-        placeholder="Enter Department"
-    )
-
-    course_name = st.text_input(
-        "Course Name",
-        placeholder="Enter Course Name"
-    )
+    department = st.text_input("Department")
+    course_name = st.text_input("Course Name")
 
 with col2:
-    course_code = st.text_input(
-        "Course Code",
-        placeholder="Enter Course Code"
-    )
-
-    semester = st.selectbox(
-        "Semester",
-        list(range(1, 9))
-    )
+    course_code = st.text_input("Course Code")
+    semester = st.selectbox("Semester", range(1, 9))
 
 st.divider()
 
@@ -85,13 +71,13 @@ st.write(
     "to each Course Outcome."
 )
 
-co_weight_df = pd.DataFrame({
+co_weight_input = pd.DataFrame({
     "CO": co_names,
     "Assigned CO Weight": [0.0] * int(co_count)
 })
 
 edited_co_weights = st.data_editor(
-    co_weight_df,
+    co_weight_input,
     key=f"co_weights_{co_count}",
     hide_index=True,
     disabled=["CO"],
@@ -119,141 +105,165 @@ co_weights = {
 st.divider()
 
 # =====================================================
-# ASSESSMENT INPUT MATRIX
+# PA1 AND PA2 INPUT
 # =====================================================
 
-st.header("3. Assessment Input Matrix")
+st.header("3. PA Assessment Input Matrix")
 
 st.write(
-    "Enter the weight assigned to each CO in the respective "
-    "assessment. The total assessment weight will be calculated "
-    "automatically."
+    "Enter the total weight of PA1 and PA2 and tick "
+    "the COs covered by each assessment."
 )
 
-assessment_names = ["PA1", "PA2", "LE1", "LE2"]
+pa_names = ["PA1", "PA2"]
 
-input_rows = []
+pa_rows = []
 
-for assessment in assessment_names:
-
-    row = {"Assessment": assessment}
+for assessment in pa_names:
+    row = {
+        "Assessment": assessment,
+        "Assessment Weight": 0.0
+    }
 
     for co in co_names:
-        row[co] = 0.0
+        row[co] = False
 
-    input_rows.append(row)
+    pa_rows.append(row)
 
-input_df = pd.DataFrame(input_rows)
+pa_input = pd.DataFrame(pa_rows)
 
-input_config = {
+pa_config = {
     "Assessment": st.column_config.TextColumn(
         "Assessment",
         disabled=True
+    ),
+    "Assessment Weight": st.column_config.NumberColumn(
+        "Assessment Weight",
+        min_value=0.0,
+        step=0.5,
+        format="%.2f"
     )
 }
 
 for co in co_names:
-    input_config[co] = st.column_config.NumberColumn(
-        f"{co} Weight",
-        min_value=0.0,
-        step=0.5,
-        format="%.2f",
-        help=f"Enter the weight assigned to {co} in this assessment."
+    pa_config[co] = st.column_config.CheckboxColumn(
+        co,
+        help=f"Tick if {co} is covered in this PA"
     )
 
-edited_input = st.data_editor(
-    input_df,
-    key=f"assessment_input_{co_count}",
+edited_pa = st.data_editor(
+    pa_input,
+    key=f"pa_input_{co_count}",
     hide_index=True,
     disabled=["Assessment"],
     num_rows="fixed",
-    column_config=input_config,
+    column_config=pa_config,
     width="stretch"
 )
-
-# =====================================================
-# AUTOMATIC ASSESSMENT WEIGHT CALCULATION
-# =====================================================
-
-assessment_totals = []
-
-for _, row in edited_input.iterrows():
-
-    total = sum(
-        float(row[co])
-        for co in co_names
-    )
-
-    assessment_totals.append(total)
-
-edited_input["Total Assessment Weight"] = assessment_totals
-
-# =====================================================
-# CALCULATED CO ASSESSMENT SUMMARY MATRIX
-# =====================================================
 
 st.divider()
 
-st.header("4. Calculated CO Assessment Summary")
+# =====================================================
+# LE1 AND LE2 INPUT
+# =====================================================
+
+st.header("4. Learning Evaluation Input")
 
 st.write(
-    "The summary matrix displays the CO-wise weights "
-    "assigned in each assessment and the total weight."
+    "LE1 and LE2 are single-weight assessments. "
+    "Enter only the total weight assigned to each."
 )
 
-summary_matrix = edited_input.copy()
+le_input = pd.DataFrame({
+    "Assessment": ["LE1", "LE2"],
+    "Total Assigned Weight": [0.0, 0.0]
+})
 
-# Add total row
-total_row = {
-    "Assessment": "TOTAL"
-}
-
-for co in co_names:
-    total_row[co] = summary_matrix[co].sum()
-
-total_row["Total Assessment Weight"] = (
-    summary_matrix["Total Assessment Weight"].sum()
-)
-
-summary_matrix = pd.concat(
-    [
-        summary_matrix,
-        pd.DataFrame([total_row])
-    ],
-    ignore_index=True
-)
-
-# Arrange columns
-summary_columns = (
-    ["Assessment"]
-    + co_names
-    + ["Total Assessment Weight"]
-)
-
-summary_matrix = summary_matrix[summary_columns]
-
-st.dataframe(
-    summary_matrix.round(2),
+edited_le = st.data_editor(
+    le_input,
+    key="le_input",
     hide_index=True,
+    disabled=["Assessment"],
+    num_rows="fixed",
+    column_config={
+        "Assessment": st.column_config.TextColumn(
+            "Assessment",
+            disabled=True
+        ),
+        "Total Assigned Weight": st.column_config.NumberColumn(
+            "Total Assigned Weight",
+            min_value=0.0,
+            step=0.5,
+            format="%.2f"
+        )
+    },
     width="stretch"
 )
 
+st.divider()
+
 # =====================================================
-# CO-WISE TOTAL SUMMARY
+# CALCULATE PA CO-WISE ALLOCATION
 # =====================================================
 
-st.subheader("CO-wise Total Assessment Weight")
+pa_summary_rows = []
+
+for _, row in edited_pa.iterrows():
+
+    assessment = row["Assessment"]
+    assessment_weight = float(row["Assessment Weight"])
+
+    selected_cos = [
+        co for co in co_names
+        if bool(row[co])
+    ]
+
+    denominator = sum(
+        co_weights[co] for co in selected_cos
+    )
+
+    result = {
+        "Assessment": assessment,
+        "Assessment Weight": assessment_weight
+    }
+
+    for co in co_names:
+
+        if bool(row[co]) and denominator > 0:
+            allocated_weight = (
+                assessment_weight * co_weights[co]
+            ) / denominator
+        else:
+            allocated_weight = 0.0
+
+        result[co] = allocated_weight
+
+    pa_summary_rows.append(result)
+
+pa_summary = pd.DataFrame(pa_summary_rows)
+
+# =====================================================
+# CO-WISE TOTAL ASSESSMENT WEIGHT
+# PA1 AND PA2 ONLY
+# =====================================================
+
+st.header("5. CO-wise Total Assessment Weight")
+
+st.caption(
+    "Calculated from PA1 and PA2 allocations only. "
+    "LE1 and LE2 are not distributed among COs."
+)
 
 co_total_data = []
 
 for co in co_names:
 
+    total = pa_summary[co].sum()
+
     co_total_data.append({
         "Course Outcome": co,
-        "Total Assigned Weight": summary_matrix.loc[
-            summary_matrix["Assessment"] != "TOTAL",
-            co
-        ].sum()
+        "Teacher-Assigned CO Weight": co_weights[co],
+        "Total PA Assessment Weight": total
     })
 
 co_total_df = pd.DataFrame(co_total_data)
@@ -264,20 +274,120 @@ st.dataframe(
     width="stretch"
 )
 
+st.divider()
+
+# =====================================================
+# FINAL SUMMARY MATRIX
+# =====================================================
+
+st.header("6. Calculated CO Assessment Summary Matrix")
+
+st.write(
+    "PA1 and PA2 show their calculated CO-wise allocation. "
+    "LE1 and LE2 show their single assigned total weights."
+)
+
+summary_rows = []
+
+# Add PA rows
+for _, row in pa_summary.iterrows():
+
+    result = {
+        "Assessment": row["Assessment"],
+        "Assessment Weight": row["Assessment Weight"]
+    }
+
+    for co in co_names:
+        result[co] = row[co]
+
+    result["TOTAL"] = row["Assessment Weight"]
+
+    summary_rows.append(result)
+
+# Add LE rows: no CO-wise allocation
+for _, row in edited_le.iterrows():
+
+    result = {
+        "Assessment": row["Assessment"],
+        "Assessment Weight": float(
+            row["Total Assigned Weight"]
+        )
+    }
+
+    for co in co_names:
+        result[co] = "—"
+
+    result["TOTAL"] = float(
+        row["Total Assigned Weight"]
+    )
+
+    summary_rows.append(result)
+
+# Create summary dataframe
+summary_matrix = pd.DataFrame(summary_rows)
+
+# Add total row
+total_row = {
+    "Assessment": "TOTAL",
+    "Assessment Weight": summary_matrix[
+        "Assessment Weight"
+    ].sum()
+}
+
+for co in co_names:
+    total_row[co] = pa_summary[co].sum()
+
+total_row["TOTAL"] = summary_matrix["TOTAL"].sum()
+
+summary_matrix = pd.concat(
+    [summary_matrix, pd.DataFrame([total_row])],
+    ignore_index=True
+)
+
+display_columns = (
+    ["Assessment", "Assessment Weight"]
+    + co_names
+    + ["TOTAL"]
+)
+
+summary_matrix = summary_matrix[display_columns]
+
+st.dataframe(
+    summary_matrix.round(2),
+    hide_index=True,
+    width="stretch"
+)
+
 # =====================================================
 # VALIDATION
 # =====================================================
 
-st.subheader("5. Assessment Weight Summary")
+st.header("7. Validation")
 
-for _, row in edited_input.iterrows():
+for _, row in edited_pa.iterrows():
 
     assessment = row["Assessment"]
-    total = float(row["Total Assessment Weight"])
+    assessment_weight = float(row["Assessment Weight"])
 
-    st.write(
-        f"**{assessment} Total Weight:** {total:.2f}"
+    selected_cos = [
+        co for co in co_names
+        if bool(row[co])
+    ]
+
+    denominator = sum(
+        co_weights[co] for co in selected_cos
     )
+
+    if assessment_weight > 0 and not selected_cos:
+        st.warning(
+            f"{assessment}: Select at least one CO."
+        )
+
+    elif assessment_weight > 0 and denominator == 0:
+        st.warning(
+            f"{assessment}: Selected COs have zero "
+            "teacher-assigned weight."
+        )
 
 # =====================================================
 # EXCEL DOWNLOAD
@@ -285,7 +395,7 @@ for _, row in edited_input.iterrows():
 
 st.divider()
 
-st.header("6. Download Summary Matrix")
+st.header("8. Download Summary Matrix")
 
 course_details = pd.DataFrame({
     "Field": [
@@ -323,21 +433,27 @@ with pd.ExcelWriter(
         index=False
     )
 
-    edited_input.to_excel(
+    edited_pa.to_excel(
         writer,
-        sheet_name="Assessment Input",
+        sheet_name="PA Input",
         index=False
     )
 
-    summary_matrix.to_excel(
+    edited_le.to_excel(
         writer,
-        sheet_name="CO Summary Matrix",
+        sheet_name="LE Input",
         index=False
     )
 
     co_total_df.to_excel(
         writer,
         sheet_name="CO-wise Total",
+        index=False
+    )
+
+    summary_matrix.to_excel(
+        writer,
+        sheet_name="CO Summary Matrix",
         index=False
     )
 
