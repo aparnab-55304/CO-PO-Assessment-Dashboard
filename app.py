@@ -15,6 +15,75 @@ st.set_page_config(
 st.title("CO–PO Assessment Summary Dashboard")
 st.caption("Automated Weighted Assessment–CO Summary Matrix")
 
+# =========================================================
+# COURSE DETAILS
+# =========================================================
+
+st.header("Course Details")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    department = st.selectbox(
+        "Department",
+        [
+            "Select Department",
+            "Statistics",
+            "Mathematics",
+            "Computer Science",
+            "Physics",
+            "Chemistry",
+            "Commerce",
+            "Economics",
+            "Other"
+        ]
+    )
+
+    course_name = st.selectbox(
+        "Course Name",
+        [
+            "Select Course",
+            "Statistical Computing",
+            "Statistical Modelling",
+            "Time Series Analysis",
+            "Multivariate Analysis",
+            "Design and Analysis of Experiments",
+            "Other"
+        ]
+    )
+
+with col2:
+    course_code = st.selectbox(
+        "Course Code",
+        [
+            "Select Course Code",
+            "ST040301",
+            "ST040302",
+            "ST040303",
+            "ST500302",
+            "ST500304",
+            "Other"
+        ]
+    )
+
+    semester = st.selectbox(
+        "Semester",
+        [
+            "Select Semester",
+            "Semester 1",
+            "Semester 2",
+            "Semester 3",
+            "Semester 4",
+            "Semester 5",
+            "Semester 6",
+            "Semester 7",
+            "Semester 8"
+        ]
+    )
+
+st.divider()
+
+
 # =====================================================
 # BASIC STRUCTURE
 # =====================================================
