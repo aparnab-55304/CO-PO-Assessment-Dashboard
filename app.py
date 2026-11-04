@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 import io
+from pathlib import Path
 
 # =====================================================
 # PAGE CONFIGURATION
@@ -20,7 +21,39 @@ st.title("CO Assessment Summary Matrix")
 # =====================================================
 
 if st.button("Reset"):
+    st.session_state.clear()
     st.rerun()
+
+# =====================================================
+# LOAD COURSE GROUP EXCEL
+# =====================================================
+
+file_path = Path(__file__).parent / "Course Group.xlsx"
+
+try:
+    course_df = pd.read_excel(file_path, header=1)
+    course_df.columns = course_df.columns.astype(str).str.strip()
+
+    required_columns = [
+        "Program",
+        "Program Code",
+        "Handling Department"
+    ]
+
+    course_df = course_df.dropna(subset=required_columns)
+
+    for col in required_columns:
+        course_df[col] = course_df[col].astype(str).str.strip()
+
+    course_df = course_df[
+        (course_df["Program"] != "") &
+        (course_df["Program Code"] != "") &
+        (course_df["Handling Department"] != "")
+    ]
+
+except Exception:
+    st.error("Unable to load Course Group.xlsx.")
+    st.stop()
 
 # =====================================================
 # COURSE DETAILS
@@ -28,18 +61,42 @@ if st.button("Reset"):
 
 st.header("Course Details")
 
-col1, col2 = st.columns(2)
+program_options = sorted(course_df["Program"].unique())
 
-with col1:
-    department = st.text_input("Department")
-    course_name = st.text_input("Course Name")
+selected_program = st.selectbox(
+    "Program",
+    program_options,
+    key="program"
+)
 
-with col2:
-    course_code = st.text_input("Course Code")
-    semester = st.text_input("Semester")
+program_data = course_df[
+    course_df["Program"] == selected_program
+]
+
+code_options = sorted(program_data["Program Code"].unique())
+
+selected_code = st.selectbox(
+    "Program Code",
+    code_options,
+    key="program_code"
+)
+
+code_data = program_data[
+    program_data["Program Code"] == selected_code
+]
+
+department_options = sorted(
+    code_data["Handling Department"].unique()
+)
+
+selected_department = st.selectbox(
+    "Department",
+    department_options,
+    key="department"
+)
 
 # =====================================================
-# NUMBER OF COURSE OUTCOMES
+# COURSE OUTCOMES
 # =====================================================
 
 st.header("Course Outcomes")
@@ -52,7 +109,9 @@ num_cos = st.number_input(
     step=1
 )
 
-co_names = [f"CO{i+1}" for i in range(int(num_cos))]
+co_names = [
+    f"CO{i+1}" for i in range(int(num_cos))
+]
 
 # =====================================================
 # CO WEIGHTS
@@ -62,16 +121,16 @@ st.subheader("CO Weights")
 
 co_weights = {}
 
-cols = st.columns(int(num_cos))
+co_cols = st.columns(len(co_names))
 
 for i, co in enumerate(co_names):
-    with cols[i]:
+    with co_cols[i]:
         co_weights[co] = st.number_input(
             co,
             min_value=0.0,
             value=0.0,
             step=1.0,
-            key=f"weight_{co}"
+            key=f"co_weight_{co}"
         )
 
 # =====================================================
@@ -86,28 +145,59 @@ for pa in ["PA1", "PA2"]:
 
     st.subheader(pa)
 
-    assessment_weight = st.number_input(
-        f"{pa} Total Weight",
+    pa_total_weight = st.number_input(
+        f"{pa} Weight",
         min_value=0.0,
         value=0.0,
         step=1.0,
-        key=f"{pa}_weight"
+        key=f"{pa}_total_weight"
     )
 
-    selected_cos = {}
+    st.markdown("**CO Selection and Weight Distribution**")
 
-    cols = st.columns(int(num_cos))
+    pa_co_data = {}
 
-    for i, co in enumerate(co_names):
-        with cols[i]:
-            selected_cos[co] = st.checkbox(
-                co,
-                key=f"{pa}_{co}"
+    header_cols = st.columns([1, 1, 2])
+
+    header_cols[0].markdown("**CO**")
+    header_cols[1].markdown("**Select**")
+    header_cols[2].markdown("**Assigned Weight**")
+
+    for co in co_names:
+
+        cols = st.columns([1, 1, 2])
+
+        with cols[0]:
+            st.write(co)
+
+        with cols[1]:
+            selected = st.checkbox(
+                " ",
+                key=f"{pa}_{co}_selected"
             )
 
+        with cols[2]:
+            if selected:
+                assigned_weight = st.number_input(
+                    f"{co} Weight",
+                    min_value=0.0,
+                    value=0.0,
+                    step=1.0,
+                    key=f"{pa}_{co}_assigned",
+                    label_visibility="collapsed"
+                )
+            else:
+                assigned_weight = 0.0
+                st.write("—")
+
+        pa_co_data[co] = {
+            "Selected": selected,
+            "Weight": assigned_weight
+        }
+
     pa_data[pa] = {
-        "Assessment Weight": assessment_weight,
-        "Selected COs": selected_cos
+        "Total Weight": pa_total_weight,
+        "CO Data": pa_co_data
     }
 
 # =====================================================
@@ -122,146 +212,129 @@ col1, col2 = st.columns(2)
 
 with col1:
     le_data["LE1"] = st.number_input(
-        "LE1 Total Weight",
+        "LE1 Weight",
         min_value=0.0,
         value=0.0,
-        step=1.0
+        step=1.0,
+        key="le1_weight"
     )
 
 with col2:
-    le_data["LE2"] = st.number_input(
-        "LE2 Total Weight",
+    le_data["LM"] = st.number_input(
+        "LM Weight",
         min_value=0.0,
         value=0.0,
-        step=1.0
+        step=1.0,
+        key="lm_weight"
     )
 
 # =====================================================
-# CALCULATE PA CO ALLOCATIONS
-# =====================================================
-
-pa_summary = {}
-
-for pa in ["PA1", "PA2"]:
-
-    assessment_weight = pa_data[pa]["Assessment Weight"]
-    selected_cos = pa_data[pa]["Selected COs"]
-
-    denominator = sum(
-        co_weights[co]
-        for co in co_names
-        if selected_cos[co]
-    )
-
-    allocations = {}
-
-    for co in co_names:
-
-        if selected_cos[co] and denominator > 0:
-            allocations[co] = (
-                assessment_weight * co_weights[co] / denominator
-            )
-        else:
-            allocations[co] = 0.0
-
-    pa_summary[pa] = allocations
-
-# =====================================================
-# CO-WISE TOTAL ASSESSMENT WEIGHT
-# =====================================================
-
-st.header("CO-wise Total Assessment Weight")
-
-co_total_data = {}
-
-for co in co_names:
-    co_total_data[co] = (
-        pa_summary["PA1"][co] +
-        pa_summary["PA2"][co]
-    )
-
-co_total_df = pd.DataFrame(
-    [co_total_data],
-    index=["Total Assessment Weight"]
-)
-
-st.dataframe(
-    co_total_df.round(2),
-    use_container_width=True
-)
-
-# =====================================================
-# CO ASSESSMENT SUMMARY MATRIX
+# BUILD SUMMARY MATRIX
 # =====================================================
 
 st.header("CO Assessment Summary Matrix")
 
 matrix_rows = []
 
-# PA1 and PA2
+# PA1 AND PA2
 
 for pa in ["PA1", "PA2"]:
 
     row = {
         "Assessment": pa,
-        "Assessment Weight": pa_data[pa]["Assessment Weight"]
+        "Weight": pa_data[pa]["Total Weight"]
     }
 
-    for co in co_names:
-        row[co] = pa_summary[pa][co]
+    co_total = 0.0
 
-    row["TOTAL"] = sum(pa_summary[pa].values())
+    for co in co_names:
+
+        value = pa_data[pa]["CO Data"][co]["Weight"]
+
+        row[co] = value
+        co_total += value
+
+    row["CO Total Assessment"] = co_total
+    row["TOTAL"] = pa_data[pa]["Total Weight"]
 
     matrix_rows.append(row)
 
-# LE1 and LE2
+# LE1 AND LM
 
-for le in ["LE1", "LE2"]:
+for assessment in ["LE1", "LM"]:
 
     row = {
-        "Assessment": le,
-        "Assessment Weight": le_data[le]
+        "Assessment": assessment,
+        "Weight": le_data[assessment]
     }
 
     for co in co_names:
         row[co] = "—"
 
-    row["TOTAL"] = le_data[le]
+    row["CO Total Assessment"] = "—"
+    row["TOTAL"] = le_data[assessment]
 
     matrix_rows.append(row)
 
 # =====================================================
-# TOTAL ROW
+# COLUMN TOTALS
 # =====================================================
 
 total_row = {
     "Assessment": "TOTAL",
-    "Assessment Weight": (
-        pa_data["PA1"]["Assessment Weight"] +
-        pa_data["PA2"]["Assessment Weight"] +
+    "Weight": (
+        pa_data["PA1"]["Total Weight"] +
+        pa_data["PA2"]["Total Weight"] +
         le_data["LE1"] +
-        le_data["LE2"]
+        le_data["LM"]
     )
 }
 
 for co in co_names:
-    total_row[co] = co_total_data[co]
+
+    total_row[co] = (
+        pa_data["PA1"]["CO Data"][co]["Weight"] +
+        pa_data["PA2"]["CO Data"][co]["Weight"]
+    )
+
+total_row["CO Total Assessment"] = sum(
+    total_row[co] for co in co_names
+)
 
 total_row["TOTAL"] = (
-    pa_data["PA1"]["Assessment Weight"] +
-    pa_data["PA2"]["Assessment Weight"] +
+    pa_data["PA1"]["Total Weight"] +
+    pa_data["PA2"]["Total Weight"] +
     le_data["LE1"] +
-    le_data["LE2"]
+    le_data["LM"]
 )
 
 matrix_rows.append(total_row)
 
 summary_matrix = pd.DataFrame(matrix_rows)
 
+# =====================================================
+# DISPLAY AS GRID
+# =====================================================
+
+display_matrix = summary_matrix.copy()
+
+numeric_columns = (
+    ["Weight"] +
+    co_names +
+    ["CO Total Assessment", "TOTAL"]
+)
+
+for col in numeric_columns:
+    display_matrix[col] = pd.to_numeric(
+        display_matrix[col],
+        errors="coerce"
+    ).round(2)
+
 st.dataframe(
-    summary_matrix.round(2),
+    display_matrix,
     use_container_width=True,
-    hide_index=True
+    hide_index=True,
+    height=250
 )
 
 # =====================================================
@@ -274,22 +347,22 @@ output = io.BytesIO()
 
 course_details = pd.DataFrame({
     "Field": [
-        "Department",
-        "Course Name",
-        "Course Code",
-        "Semester"
+        "Program",
+        "Program Code",
+        "Department"
     ],
-    "Value": [
-        department,
-        course_name,
-        course_code,
-        semester
+    "Selected Value": [
+        selected_program,
+        selected_code,
+        selected_department
     ]
 })
 
 co_weights_df = pd.DataFrame({
-    "Course Outcome": co_names,
-    "Assigned Weight": [co_weights[co] for co in co_names]
+    "CO": co_names,
+    "Assigned CO Weight": [
+        co_weights[co] for co in co_names
+    ]
 })
 
 pa_input_rows = []
@@ -298,21 +371,22 @@ for pa in ["PA1", "PA2"]:
 
     row = {
         "Assessment": pa,
-        "Assessment Weight": pa_data[pa]["Assessment Weight"]
+        "Total Weight": pa_data[pa]["Total Weight"]
     }
 
     for co in co_names:
-        row[co] = int(pa_data[pa]["Selected COs"][co])
+        row[f"{co} Selected"] = pa_data[pa]["CO Data"][co]["Selected"]
+        row[f"{co} Assigned Weight"] = pa_data[pa]["CO Data"][co]["Weight"]
 
     pa_input_rows.append(row)
 
 pa_input_df = pd.DataFrame(pa_input_rows)
 
 le_input_df = pd.DataFrame({
-    "Assessment": ["LE1", "LE2"],
-    "Total Weight": [
+    "Assessment": ["LE1", "LM"],
+    "Weight": [
         le_data["LE1"],
-        le_data["LE2"]
+        le_data["LM"]
     ]
 })
 
@@ -340,11 +414,6 @@ with pd.ExcelWriter(output, engine="openpyxl") as writer:
         writer,
         sheet_name="LE Input",
         index=False
-    )
-
-    co_total_df.to_excel(
-        writer,
-        sheet_name="CO-wise Total"
     )
 
     summary_matrix.to_excel(
