@@ -6,13 +6,12 @@ from io import BytesIO
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-
 # =========================================================
 # PAGE CONFIGURATION
 # =========================================================
 
 st.set_page_config(
-    page_title="CO Weightage Allocation Dashboard",
+    page_title="MGU CO Weightage Allocation Dashboard",
     page_icon="📊",
     layout="wide"
 )
@@ -23,570 +22,1059 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    .stApp {
-        background-color: #FFFFFF;
-        color: #111111;
-    }
-
-    h1, h2, h3, h4, p, label {
-        color: #111111 !important;
-    }
-
-    div[data-baseweb="select"] > div {
-        background-color: #FFFFFF;
-    }
-
-    div[data-testid="stNumberInput"] input {
-        background-color: #FFFFFF;
-        color: #111111;
-    }
-
-    .stButton > button {
-        background-color: #174D36;
-        color: white;
-        border-radius: 7px;
-        border: none;
-        font-weight: bold;
-    }
-
-    .stButton > button:hover {
-        background-color: #246B4B;
-        color: white;
-    }
-
-    div[data-testid="stDataFrame"] {
-        border: 1px solid #D6D6D6;
-    }
-
-    .dashboard-title {
-        color: #174D36;
-        font-size: 30px;
-        font-weight: bold;
-    }
-
-    .section-title {
-        color: #174D36;
-        font-size: 21px;
-        font-weight: bold;
-        margin-top: 15px;
-    }
-
-    hr {
-        border-top: 1px solid #D6D6D6;
-    }
+.stApp {
+    background-color: #FFFFFF;
+    color: #17211C;
+}
+h1, h2, h3, h4, p, label {
+    color: #17211C !important;
+}
+.dashboard-title {
+    color: #174D36;
+    font-size: 30px;
+    font-weight: bold;
+}
+.section-title {
+    color: #174D36;
+    font-size: 21px;
+    font-weight: bold;
+    margin-top: 12px;
+}
+div[data-testid="stMetric"] {
+    background: #F3F7F4;
+    padding: 12px;
+    border-radius: 8px;
+}
+.stButton > button {
+    background-color: #174D36;
+    color: white;
+    border-radius: 7px;
+    font-weight: bold;
+}
+.stButton > button:hover {
+    background-color: #246B4B;
+    color: white;
+}
 </style>
 """, unsafe_allow_html=True)
 
 
 # =========================================================
-# CONSTANTS
+# FILE PATHS
 # =========================================================
 
-EXCEL_FILE = Path(__file__).parent / "Course Group.xlsx"
+BASE_DIR = Path(__file__).parent
+COURSE_GROUP_PATH = BASE_DIR / "Course Group.xlsx"
 
-ASSESSMENTS = ["PA1", "PA2", "LE1", "LE2"]
+# =========================================================
+# STANDARD COLUMN NAMES
+# =========================================================
 
-EXPECTED_COLUMNS = [
-    "Program Code",
-    "Program",
-    "Program Type Name",
-    "Program Type",
-    "Category",
-    "ExamType",
-    "ISA",
-    "ESA",
-    "ISA PRACTICAL",
-    "ESA PRACTICAL",
-    "Credit",
-    "Handling Department",
-    "Teaching Department",
-    "Total Seat",
-    "CO"
-]
+ALIASES = {
+    "Program": [
+        "Program", "Programme", "Program Name",
+        "Programme Name"
+    ],
+    "Semester": [
+        "Semester", "Semester Name", "Sem"
+    ],
+    "Course Code": [
+        "Course Code", "Subject Code", "Paper Code",
+        "Course ID", "Subject ID"
+    ],
+    "Course Name": [
+        "Course Name", "Subject Name", "Course",
+        "Subject", "Paper Name", "Course Title"
+    ],
+    "Credit": [
+        "Credit", "Credits"
+    ],
+    "Total Marks": [
+        "Total Marks", "Maximum Marks", "Total"
+    ],
+    "Internal Marks": [
+        "Internal Marks", "ISA", "Internal"
+    ],
+    "External Marks": [
+        "External Marks", "ESA", "External"
+    ],
+    "CO": [
+        "CO", "CO Number", "Course Outcome",
+        "CO Code"
+    ],
+    "CO Statement": [
+        "CO Statement", "Course Outcome Statement",
+        "Outcome Description", "Description"
+    ],
+    "Learning Level": [
+        "Learning Level", "Bloom Level",
+        "Bloom's Taxonomy", "Level"
+    ],
+    "Assessment": [
+        "Assessment", "Assessment Name",
+        "Component", "Exam Name"
+    ],
+    "Assessment Type": [
+        "Assessment Type", "Type", "Category"
+    ],
+    "Maximum Marks": [
+        "Maximum Marks", "Max Marks",
+        "Max Mark", "Marks"
+    ]
+}
+
+
+def standardize_columns(df):
+
+    df = df.copy()
+
+    df.columns = [
+        str(c).strip().replace("\n", " ")
+        for c in df.columns
+    ]
+
+    rename = {}
+
+    for standard, possible_names in ALIASES.items():
+
+        for col in df.columns:
+
+            if col.strip().lower() in [
+                x.lower() for x in possible_names
+            ]:
+                rename[col] = standard
+                break
+
+    return df.rename(columns=rename)
+
+
+def clean_text(df):
+
+    df = df.copy()
+
+    for col in df.columns:
+
+        if df[col].dtype == "object":
+            df[col] = (
+                df[col]
+                .astype("string")
+                .str.strip()
+            )
+
+    return df
+
+
+def clean_code(value):
+
+    if pd.isna(value):
+        return ""
+
+    return str(value).strip().upper()
 
 
 # =========================================================
-# LOAD COURSE GROUP EXCEL FILE
+# SYLLABUS TEMPLATE
+# =========================================================
+
+def create_syllabus_template():
+
+    output = BytesIO()
+
+    courses = pd.DataFrame([
+        {
+            "Program": "",
+            "Semester": "",
+            "Course Code": "",
+            "Course Name": "",
+            "Credit": "",
+            "Total Marks": "",
+            "Internal Marks": "",
+            "External Marks": ""
+        }
+    ])
+
+    outcomes = pd.DataFrame([
+        {
+            "Course Code": "",
+            "CO": "CO1",
+            "CO Statement": "",
+            "Learning Level": ""
+        },
+        {
+            "Course Code": "",
+            "CO": "CO2",
+            "CO Statement": "",
+            "Learning Level": ""
+        }
+    ])
+
+    assessments = pd.DataFrame([
+        {
+            "Course Code": "",
+            "Assessment": "PA1",
+            "Assessment Type": "Internal",
+            "Maximum Marks": 0
+        },
+        {
+            "Course Code": "",
+            "Assessment": "PA2",
+            "Assessment Type": "Internal",
+            "Maximum Marks": 0
+        },
+        {
+            "Course Code": "",
+            "Assessment": "External Examination",
+            "Assessment Type": "External",
+            "Maximum Marks": 0
+        }
+    ])
+
+    with pd.ExcelWriter(
+        output,
+        engine="openpyxl"
+    ) as writer:
+
+        courses.to_excel(
+            writer,
+            sheet_name="Courses",
+            index=False
+        )
+
+        outcomes.to_excel(
+            writer,
+            sheet_name="Course_Outcomes",
+            index=False
+        )
+
+        assessments.to_excel(
+            writer,
+            sheet_name="Assessments",
+            index=False
+        )
+
+    output.seek(0)
+
+    return output
+
+
+# =========================================================
+# LOAD COURSE GROUP
 # =========================================================
 
 @st.cache_data
-def load_course_data():
+def load_course_group(file_bytes=None):
 
-    if not EXCEL_FILE.exists():
-        raise FileNotFoundError(
-            "Course Group.xlsx was not found. "
-            "Place it in the same folder as app.py."
+    if file_bytes is not None:
+
+        df = pd.read_excel(
+            BytesIO(file_bytes),
+            header=2,
+            engine="openpyxl"
         )
 
-    # Your actual column headings are in Excel row 3.
-    df = pd.read_excel(
-        EXCEL_FILE,
-        header=2,
-        engine="openpyxl"
-    )
+    elif COURSE_GROUP_PATH.exists():
 
-    # Clean column headings
-    df.columns = (
-        df.columns.astype(str)
-        .str.strip()
-        .str.replace("\n", " ", regex=False)
-    )
+        df = pd.read_excel(
+            COURSE_GROUP_PATH,
+            header=2,
+            engine="openpyxl"
+        )
 
-    # Remove empty rows and columns
+    else:
+        return pd.DataFrame()
+
+    df = standardize_columns(df)
+    df = clean_text(df)
+
     df = df.dropna(how="all")
     df = df.dropna(axis=1, how="all")
-
-    # Remove unwanted spaces in text columns
-    for column in df.columns:
-        if df[column].dtype == "object":
-            df[column] = df[column].astype("string").str.strip()
-
-    # Remove rows without a Program Code
-    if "Program Code" in df.columns:
-        df = df.dropna(subset=["Program Code"])
 
     return df
 
 
 # =========================================================
-# LOAD DATA
+# LOAD SYLLABUS WORKBOOK
 # =========================================================
 
-try:
-    course_df = load_course_data()
+def load_syllabus(file):
 
-except Exception as e:
-    st.error(f"Unable to load course details: {e}")
-    st.stop()
+    workbook = pd.ExcelFile(file)
 
+    required_sheets = [
+        "Courses",
+        "Course_Outcomes",
+        "Assessments"
+    ]
 
-# =========================================================
-# HELPER FUNCTIONS
-# =========================================================
+    missing = [
+        s for s in required_sheets
+        if s not in workbook.sheet_names
+    ]
 
-def get_options(data, column):
+    if missing:
+        raise ValueError(
+            "Missing sheets: " + ", ".join(missing)
+        )
 
-    if column not in data.columns:
-        return ["All"]
-
-    values = (
-        data[column]
-        .dropna()
-        .astype(str)
-        .str.strip()
-        .unique()
-        .tolist()
+    courses = pd.read_excel(
+        workbook,
+        sheet_name="Courses"
     )
 
-    values = sorted([v for v in values if v and v.lower() != "nan"])
+    outcomes = pd.read_excel(
+        workbook,
+        sheet_name="Course_Outcomes"
+    )
 
-    return ["All"] + values
+    assessments = pd.read_excel(
+        workbook,
+        sheet_name="Assessments"
+    )
 
+    courses = clean_text(standardize_columns(courses))
+    outcomes = clean_text(standardize_columns(outcomes))
+    assessments = clean_text(standardize_columns(assessments))
 
-def apply_filter(data, column, selected_value):
+    # Required columns
 
-    if (
-        column in data.columns
-        and selected_value != "All"
-    ):
-        data = data[
-            data[column].astype(str).str.strip()
-            == selected_value
-        ]
+    required_courses = [
+        "Program", "Semester",
+        "Course Code", "Course Name"
+    ]
 
-    return data
+    required_outcomes = [
+        "Course Code", "CO", "CO Statement"
+    ]
 
+    required_assessments = [
+        "Course Code", "Assessment",
+        "Assessment Type", "Maximum Marks"
+    ]
 
-def safe_number(value):
+    for col in required_courses:
 
-    try:
-        return float(value)
-    except (ValueError, TypeError):
-        return 0.0
+        if col not in courses.columns:
+            raise ValueError(
+                f"Courses sheet is missing: {col}"
+            )
 
+    for col in required_outcomes:
 
-def format_number(value):
+        if col not in outcomes.columns:
+            raise ValueError(
+                f"Course_Outcomes sheet is missing: {col}"
+            )
 
-    return round(float(value), 2)
+    for col in required_assessments:
+
+        if col not in assessments.columns:
+            raise ValueError(
+                f"Assessments sheet is missing: {col}"
+            )
+
+    # Clean identifiers
+
+    for df in [courses, outcomes, assessments]:
+
+        df["Course Code"] = (
+            df["Course Code"].apply(clean_code)
+        )
+
+    courses = courses[
+        courses["Course Code"] != ""
+    ].copy()
+
+    outcomes = outcomes[
+        outcomes["Course Code"] != ""
+    ].copy()
+
+    assessments = assessments[
+        assessments["Course Code"] != ""
+    ].copy()
+
+    # Numeric maximum marks
+
+    assessments["Maximum Marks"] = pd.to_numeric(
+        assessments["Maximum Marks"],
+        errors="coerce"
+    )
+
+    if assessments["Maximum Marks"].isna().any():
+        raise ValueError(
+            "Every assessment must have a numeric Maximum Marks value."
+        )
+
+    if (assessments["Maximum Marks"] < 0).any():
+        raise ValueError(
+            "Assessment maximum marks cannot be negative."
+        )
+
+    # Validate assessment types
+
+    assessments["Assessment Type"] = (
+        assessments["Assessment Type"]
+        .astype(str)
+        .str.strip()
+        .str.title()
+    )
+
+    invalid_types = ~assessments["Assessment Type"].isin(
+        ["Internal", "External"]
+    )
+
+    if invalid_types.any():
+        raise ValueError(
+            "Assessment Type must be Internal or External."
+        )
+
+    # Validate duplicate course codes
+
+    if courses["Course Code"].duplicated().any():
+        raise ValueError(
+            "Duplicate Course Code found in Courses sheet. "
+            "Each course must have a unique code."
+        )
+
+    return courses, outcomes, assessments
 
 
 # =========================================================
-# DASHBOARD TITLE
+# HEADER
 # =========================================================
 
 st.markdown(
     '<div class="dashboard-title">'
-    'CO Weightage Allocation Dashboard'
+    'MGU CO Weightage Allocation Dashboard'
     '</div>',
     unsafe_allow_html=True
 )
 
-st.markdown("---")
+st.caption(
+    "Outcome-Based Education | Course Outcomes | "
+    "Internal and External Assessment Allocation"
+)
+
+st.divider()
 
 
 # =========================================================
-# COURSE DETAILS
+# FILE UPLOAD
 # =========================================================
 
 st.markdown(
-    '<div class="section-title">Course Details</div>',
+    '<div class="section-title">Upload Course and Syllabus Data</div>',
     unsafe_allow_html=True
 )
 
-filtered_df = course_df.copy()
+upload_col1, upload_col2 = st.columns(2)
 
-# Department selection
-department_columns = [
-    col for col in [
-        "Handling Department",
-        "Teaching Department"
-    ]
-    if col in filtered_df.columns
-]
+with upload_col1:
 
-if department_columns:
-
-    department_options = set()
-
-    for col in department_columns:
-        department_options.update(
-            filtered_df[col].dropna().astype(str).tolist()
-        )
-
-    department_options = ["All"] + sorted(department_options)
-
-    selected_department = st.selectbox(
-        "Department",
-        department_options,
-        key="department_select"
+    course_group_file = st.file_uploader(
+        "Upload Course Group.xlsx (optional)",
+        type=["xlsx"],
+        key="course_group_upload"
     )
 
-    if selected_department != "All":
+with upload_col2:
 
-        filtered_df = filtered_df[
-            filtered_df["Handling Department"].astype(str).eq(
-                selected_department
-            )
-            | filtered_df["Teaching Department"].astype(str).eq(
-                selected_department
-            )
-        ]
-
-
-# Program Type Name
-if "Program Type Name" in filtered_df.columns:
-
-    program_type_name = st.selectbox(
-        "Program Type Name",
-        get_options(filtered_df, "Program Type Name"),
-        key="program_type_name"
+    syllabus_file = st.file_uploader(
+        "Upload Syllabus Excel Workbook",
+        type=["xlsx"],
+        key="syllabus_upload"
     )
 
-    filtered_df = apply_filter(
-        filtered_df,
-        "Program Type Name",
-        program_type_name
-    )
-
-
-# Program Type
-if "Program Type" in filtered_df.columns:
-
-    program_type = st.selectbox(
-        "Program Type",
-        get_options(filtered_df, "Program Type"),
-        key="program_type"
-    )
-
-    filtered_df = apply_filter(
-        filtered_df,
-        "Program Type",
-        program_type
-    )
-
-
-# Program
-if "Program" in filtered_df.columns:
-
-    program = st.selectbox(
-        "Program",
-        get_options(filtered_df, "Program"),
-        key="program"
-    )
-
-    filtered_df = apply_filter(
-        filtered_df,
-        "Program",
-        program
-    )
-
-
-# Program Code
-if "Program Code" in filtered_df.columns:
-
-    program_code = st.selectbox(
-        "Program Code",
-        get_options(filtered_df, "Program Code"),
-        key="program_code"
-    )
-
-    filtered_df = apply_filter(
-        filtered_df,
-        "Program Code",
-        program_code
-    )
-
-
-# Category
-if "Category" in filtered_df.columns:
-
-    category = st.selectbox(
-        "Category",
-        get_options(filtered_df, "Category"),
-        key="category"
-    )
-
-    filtered_df = apply_filter(
-        filtered_df,
-        "Category",
-        category
-    )
-
-
-# Exam Type
-if "ExamType" in filtered_df.columns:
-
-    exam_type = st.selectbox(
-        "Exam Type",
-        get_options(filtered_df, "ExamType"),
-        key="exam_type"
-    )
-
-    filtered_df = apply_filter(
-        filtered_df,
-        "ExamType",
-        exam_type
-    )
-
-
-# =========================================================
-# SELECTED COURSE DETAILS
-# =========================================================
-
-st.markdown("---")
-st.markdown(
-    '<div class="section-title">Selected Course Information</div>',
-    unsafe_allow_html=True
+st.download_button(
+    "Download Syllabus Excel Template",
+    data=create_syllabus_template(),
+    file_name="MGU_Syllabus_Template.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
 
-if filtered_df.empty:
 
-    st.warning("No course details found for the selected options.")
+# =========================================================
+# LOAD COURSE GROUP DATA
+# =========================================================
+
+try:
+
+    group_bytes = (
+        course_group_file.getvalue()
+        if course_group_file else None
+    )
+
+    course_group_df = load_course_group(group_bytes)
+
+except Exception as e:
+
+    st.error(f"Course Group error: {e}")
     st.stop()
 
-selected_course = filtered_df.iloc[0]
-
-details_to_display = [
-    "Program Code",
-    "Program",
-    "Program Type Name",
-    "Program Type",
-    "Category",
-    "ExamType",
-    "Handling Department",
-    "Teaching Department",
-    "Credit",
-    "Total Seat",
-    "CO"
-]
-
-available_details = [
-    col for col in details_to_display
-    if col in filtered_df.columns
-]
-
-detail_columns = st.columns(3)
-
-for index, column in enumerate(available_details):
-
-    with detail_columns[index % 3]:
-
-        value = selected_course[column]
-
-        if pd.isna(value):
-            value = "-"
-
-        st.markdown(f"**{column}**")
-        st.write(str(value))
-
 
 # =========================================================
-# NUMBER OF COURSE OUTCOMES
+# LOAD SYLLABUS DATA
 # =========================================================
 
-st.markdown("---")
+if syllabus_file is None:
 
-st.markdown(
-    '<div class="section-title">Course Outcome Details</div>',
-    unsafe_allow_html=True
-)
-
-default_co_count = 5
-
-if "CO" in filtered_df.columns:
-
-    co_values = pd.to_numeric(
-        filtered_df["CO"],
-        errors="coerce"
-    ).dropna()
-
-    if not co_values.empty:
-
-        possible_count = int(co_values.max())
-
-        if 1 <= possible_count <= 20:
-            default_co_count = possible_count
-
-number_of_cos = st.number_input(
-    "Number of Course Outcomes",
-    min_value=1,
-    max_value=20,
-    value=default_co_count,
-    step=1,
-    key="number_of_cos"
-)
-
-CO_LIST = [
-    f"CO{i}" for i in range(1, int(number_of_cos) + 1)
-]
-
-
-# =========================================================
-# ASSESSMENT WEIGHTAGE INPUT
-# =========================================================
-
-st.markdown("---")
-
-st.markdown(
-    '<div class="section-title">Assessment Weightage Allocation</div>',
-    unsafe_allow_html=True
-)
-
-st.write("Enter the total weight and the weight assigned to each CO.")
-
-assessment_weights = {}
-assessment_co_weights = {}
-
-for assessment in ASSESSMENTS:
-
-    st.markdown(f"**{assessment}**")
-
-    assessment_weights[assessment] = st.number_input(
-        f"Total Weight - {assessment}",
-        min_value=0.0,
-        value=0.0,
-        step=1.0,
-        key=f"total_weight_{assessment}"
+    st.info(
+        "Upload the syllabus workbook to load the actual "
+        "programmes, semesters, subjects, COs and assessments."
     )
 
-    assessment_co_weights[assessment] = {}
+    st.stop()
 
-    co_columns = st.columns(min(len(CO_LIST), 5))
+try:
 
-    for index, co in enumerate(CO_LIST):
+    courses_df, outcomes_df, assessments_df = (
+        load_syllabus(syllabus_file)
+    )
 
-        with co_columns[index % len(co_columns)]:
+except Exception as e:
 
-            weight = st.number_input(
-                f"{co} Weight",
-                min_value=0.0,
-                value=0.0,
-                step=0.5,
-                key=f"{assessment}_{co}"
-            )
-
-            assessment_co_weights[assessment][co] = weight
-
-    st.markdown("---")
+    st.error(f"Syllabus loading error: {e}")
+    st.stop()
 
 
 # =========================================================
-# CO ASSESSMENT SUMMARY MATRIX
+# COURSE GROUP FILTER
 # =========================================================
+
+# Course Group is used as an additional source of
+# programme/course information where matching columns exist.
+
+if not course_group_df.empty:
+
+    if "Program" in course_group_df.columns:
+
+        group_programs = set(
+            course_group_df["Program"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+        )
+
+        syllabus_programs = set(
+            courses_df["Program"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+        )
+
+        if group_programs.intersection(syllabus_programs):
+
+            courses_df = courses_df[
+                courses_df["Program"].astype(str).isin(
+                    group_programs
+                )
+            ]
+
+
+# =========================================================
+# MAIN COURSE SELECTION
+# =========================================================
+
+st.divider()
 
 st.markdown(
-    '<div class="section-title">CO Assessment Summary Matrix</div>',
+    '<div class="section-title">Course Selection</div>',
     unsafe_allow_html=True
 )
 
-matrix_rows = []
+tab1, tab2, tab3, tab4 = st.tabs([
+    "Programme & Semester",
+    "Course Details",
+    "Course Outcomes",
+    "Assessment Allocation"
+])
 
-allocation = {}
 
-for assessment in ASSESSMENTS:
+with tab1:
 
-    total_assessment_weight = assessment_weights[assessment]
+    col1, col2 = st.columns(2)
 
-    co_weights = assessment_co_weights[assessment]
+    with col1:
 
-    selected_total = sum(
-        co_weights[co] for co in CO_LIST
+        programs = sorted(
+            courses_df["Program"]
+            .dropna()
+            .astype(str)
+            .unique()
+        )
+
+        selected_program = st.selectbox(
+            "Select Programme",
+            programs,
+            key="selected_program"
+        )
+
+    program_df = courses_df[
+        courses_df["Program"].astype(str)
+        == selected_program
+    ]
+
+    with col2:
+
+        semesters = sorted(
+            program_df["Semester"]
+            .dropna()
+            .astype(str)
+            .unique()
+        )
+
+        selected_semester = st.selectbox(
+            "Select Semester",
+            semesters,
+            key="selected_semester"
+        )
+
+    semester_df = program_df[
+        program_df["Semester"].astype(str)
+        == selected_semester
+    ]
+
+    st.success(
+        f"Selected Programme: {selected_program} | "
+        f"Semester: {selected_semester}"
     )
 
-    allocation[assessment] = {}
 
-    row = {
-        "Assessment": assessment,
-        "Assessment Weight": total_assessment_weight
-    }
+# =========================================================
+# COURSE SELECTION
+# =========================================================
+
+with tab2:
+
+    course_options = semester_df[
+        ["Course Code", "Course Name"]
+    ].drop_duplicates()
+
+    course_options["Display"] = (
+        course_options["Course Code"].astype(str)
+        + " - "
+        + course_options["Course Name"].astype(str)
+    )
+
+    selected_course_display = st.selectbox(
+        "Select Subject / Course",
+        course_options["Display"].tolist(),
+        key="selected_course"
+    )
+
+    selected_course_code = course_options.loc[
+        course_options["Display"] == selected_course_display,
+        "Course Code"
+    ].iloc[0]
+
+    selected_course = courses_df[
+        courses_df["Course Code"] == selected_course_code
+    ].iloc[0]
+
+    st.markdown("### Selected Subject Information")
+
+    info1, info2, info3 = st.columns(3)
+
+    info1.metric(
+        "Course Code",
+        selected_course["Course Code"]
+    )
+
+    info2.metric(
+        "Course Name",
+        selected_course["Course Name"]
+    )
+
+    info3.metric(
+        "Semester",
+        selected_course["Semester"]
+    )
+
+    details = {}
+
+    for col in [
+        "Credit",
+        "Total Marks",
+        "Internal Marks",
+        "External Marks"
+    ]:
+
+        if col in courses_df.columns:
+            details[col] = selected_course[col]
+
+    detail_cols = st.columns(4)
+
+    for i, (key, value) in enumerate(details.items()):
+
+        with detail_cols[i]:
+
+            if pd.isna(value):
+                value = "-"
+
+            st.write(f"**{key}**")
+            st.write(value)
+
+
+# =========================================================
+# SELECTED COURSE CO DETAILS
+# =========================================================
+
+selected_outcomes = outcomes_df[
+    outcomes_df["Course Code"] == selected_course_code
+].copy()
+
+selected_assessments = assessments_df[
+    assessments_df["Course Code"] == selected_course_code
+].copy()
+
+if selected_outcomes.empty:
+
+    st.error(
+        "No Course Outcomes are available for this subject "
+        "in the syllabus workbook."
+    )
+
+    st.stop()
+
+if selected_assessments.empty:
+
+    st.error(
+        "No assessment components are available for this subject."
+    )
+
+    st.stop()
+
+
+# Remove duplicate CO entries
+
+if selected_outcomes["CO"].duplicated().any():
+
+    st.error(
+        "Duplicate CO codes found for this course in the syllabus."
+    )
+
+    st.stop()
+
+
+CO_LIST = selected_outcomes["CO"].astype(str).tolist()
+
+
+# =========================================================
+# CO SYLLABUS DISPLAY
+# =========================================================
+
+with tab3:
+
+    st.markdown("### Course Outcomes Mentioned in Syllabus")
+
+    display_columns = [
+        c for c in [
+            "CO",
+            "CO Statement",
+            "Learning Level"
+        ]
+        if c in selected_outcomes.columns
+    ]
+
+    st.dataframe(
+        selected_outcomes[display_columns],
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.metric(
+        "Total Course Outcomes",
+        len(CO_LIST)
+    )
+
+
+# =========================================================
+# ASSESSMENT ALLOCATION
+# =========================================================
+
+st.divider()
+
+st.markdown(
+    '<div class="section-title">Assessment-wise CO Marks Allocation</div>',
+    unsafe_allow_html=True
+)
+
+st.write(
+    "Allocate the maximum marks of each assessment among "
+    "the Course Outcomes. The total CO allocation must equal "
+    "the maximum marks specified in the syllabus."
+)
+
+# Initialize persistent session values
+
+for _, assessment_row in selected_assessments.iterrows():
+
+    assessment_name = str(
+        assessment_row["Assessment"]
+    )
 
     for co in CO_LIST:
 
-        assigned_weight = co_weights[co]
+        key = (
+            f"alloc_{selected_course_code}_"
+            f"{assessment_name}_{co}"
+        )
 
-        if selected_total > 0:
+        if key not in st.session_state:
+            st.session_state[key] = 0.0
 
-            allocated_weight = (
-                assigned_weight / selected_total
-            ) * total_assessment_weight
 
-        else:
-            allocated_weight = 0.0
+allocation_data = []
+assessment_summary = []
 
-        allocation[assessment][co] = allocated_weight
+valid_allocation = True
 
-        row[co] = assigned_weight
+internal_max_total = 0.0
+external_max_total = 0.0
 
-    row["TOTAL"] = sum(
-        co_weights[co] for co in CO_LIST
+internal_co_totals = {
+    co: 0.0 for co in CO_LIST
+}
+
+external_co_totals = {
+    co: 0.0 for co in CO_LIST
+}
+
+for index, assessment_row in selected_assessments.iterrows():
+
+    assessment_name = str(
+        assessment_row["Assessment"]
     )
 
-    matrix_rows.append(row)
+    assessment_type = str(
+        assessment_row["Assessment Type"]
+    )
+
+    max_marks = float(
+        assessment_row["Maximum Marks"]
+    )
+
+    if assessment_type == "Internal":
+        internal_max_total += max_marks
+    else:
+        external_max_total += max_marks
+
+    with st.expander(
+        f"{assessment_name} | {assessment_type} | "
+        f"Maximum Marks: {max_marks:g}",
+        expanded=True
+    ):
+
+        st.write(
+            f"**Maximum marks for this assessment: "
+            f"{max_marks:g}**"
+        )
+
+        co_columns = st.columns(
+            min(len(CO_LIST), 4)
+        )
+
+        assessment_total = 0.0
+
+        current_allocations = {}
+
+        for i, co in enumerate(CO_LIST):
+
+            key = (
+                f"alloc_{selected_course_code}_"
+                f"{assessment_name}_{co}"
+            )
+
+            with co_columns[i % len(co_columns)]:
+
+                allocated_marks = st.number_input(
+                    f"{co} Marks",
+                    min_value=0.0,
+                    value=float(st.session_state[key]),
+                    step=0.5,
+                    key=key
+                )
+
+            current_allocations[co] = allocated_marks
+
+            assessment_total += allocated_marks
+
+            if assessment_type == "Internal":
+
+                internal_co_totals[co] += allocated_marks
+
+            else:
+
+                external_co_totals[co] += allocated_marks
+
+            allocation_data.append({
+                "Course Code": selected_course_code,
+                "Assessment": assessment_name,
+                "Assessment Type": assessment_type,
+                "Course Outcome": co,
+                "Allocated Maximum Marks": allocated_marks
+            })
+
+        difference = round(
+            assessment_total - max_marks, 2
+        )
+
+        if abs(difference) < 0.001:
+
+            st.success(
+                f"Allocated: {assessment_total:g} / "
+                f"{max_marks:g} marks"
+            )
+
+        else:
+
+            valid_allocation = False
+
+            st.error(
+                f"Allocated: {assessment_total:g} / "
+                f"{max_marks:g} marks. "
+                f"Difference: {difference:g}"
+            )
+
+        assessment_summary.append({
+            "Assessment": assessment_name,
+            "Assessment Type": assessment_type,
+            "Maximum Marks": max_marks,
+            "Allocated Marks": assessment_total,
+            "Difference": difference,
+            "Valid": abs(difference) < 0.001
+        })
 
 
-matrix_df = pd.DataFrame(matrix_rows)
+# =========================================================
+# TOTAL MARK VALIDATION
+# =========================================================
 
-# Total row
-total_row = {
-    "Assessment": "TOTAL",
-    "Assessment Weight": sum(assessment_weights.values())
-}
+st.divider()
+
+st.markdown("### Overall Assessment Marks")
+
+total_max_marks = (
+    internal_max_total + external_max_total
+)
+
+col1, col2, col3 = st.columns(3)
+
+col1.metric(
+    "Internal Maximum Marks",
+    f"{internal_max_total:g}"
+)
+
+col2.metric(
+    "External Maximum Marks",
+    f"{external_max_total:g}"
+)
+
+col3.metric(
+    "Total Course Marks",
+    f"{total_max_marks:g}"
+)
+
+
+# Compare syllabus course totals if available
+
+syllabus_total = selected_course.get(
+    "Total Marks", None
+)
+
+if syllabus_total is not None and pd.notna(syllabus_total):
+
+    try:
+
+        expected_total = float(syllabus_total)
+
+        if abs(expected_total - total_max_marks) > 0.001:
+
+            valid_allocation = False
+
+            st.warning(
+                f"The sum of assessment maximum marks "
+                f"({total_max_marks:g}) does not match "
+                f"the course total in the syllabus "
+                f"({expected_total:g})."
+            )
+
+    except (ValueError, TypeError):
+        pass
+
+
+# =========================================================
+# INTERNAL AND EXTERNAL CO SUMMARY
+# =========================================================
+
+st.divider()
+
+st.markdown(
+    '<div class="section-title">CO-wise Internal and External Weightage</div>',
+    unsafe_allow_html=True
+)
+
+co_summary_rows = []
 
 for co in CO_LIST:
 
-    total_row[co] = sum(
-        assessment_co_weights[a][co]
-        for a in ASSESSMENTS
-    )
+    internal = internal_co_totals[co]
+    external = external_co_totals[co]
 
-total_row["TOTAL"] = sum(
-    total_row[co] for co in CO_LIST
+    co_summary_rows.append({
+        "Course Outcome": co,
+        "Internal Weightage": round(internal, 2),
+        "External Weightage": round(external, 2),
+        "Total CO Weightage": round(
+            internal + external, 2
+        )
+    })
+
+co_summary_df = pd.DataFrame(co_summary_rows)
+
+st.dataframe(
+    co_summary_df,
+    use_container_width=True,
+    hide_index=True
 )
 
-matrix_df = pd.concat(
-    [matrix_df, pd.DataFrame([total_row])],
-    ignore_index=True
+
+# =========================================================
+# ASSESSMENT SUMMARY
+# =========================================================
+
+st.markdown("### Assessment Validation Summary")
+
+assessment_summary_df = pd.DataFrame(
+    assessment_summary
 )
+
+st.dataframe(
+    assessment_summary_df,
+    use_container_width=True,
+    hide_index=True
+)
+
+
+# =========================================================
+# FINAL ALLOCATION MATRIX
+# =========================================================
+
+st.divider()
+
+st.markdown(
+    '<div class="section-title">Final CO Assessment Allocation Matrix</div>',
+    unsafe_allow_html=True
+)
+
+allocation_df = pd.DataFrame(allocation_data)
+
+matrix_df = allocation_df.pivot(
+    index=["Assessment", "Assessment Type"],
+    columns="Course Outcome",
+    values="Allocated Maximum Marks"
+).reset_index()
+
+matrix_df.columns.name = None
 
 st.dataframe(
     matrix_df,
@@ -596,254 +1084,104 @@ st.dataframe(
 
 
 # =========================================================
-# CO-WISE TOTAL ASSESSMENT WEIGHT
+# FINAL STATUS
 # =========================================================
 
-st.markdown("---")
+st.divider()
 
-st.markdown(
-    '<div class="section-title">CO-wise Total Assessment Weight</div>',
-    unsafe_allow_html=True
-)
+if valid_allocation:
 
-co_total_rows = []
-
-for co in CO_LIST:
-
-    total_co_weight = sum(
-        allocation[assessment][co]
-        for assessment in ASSESSMENTS
+    st.success(
+        "All assessment allocations match their respective "
+        "maximum marks. The allocation report is ready."
     )
 
-    co_total_rows.append({
-        "Course Outcome": co,
-        "Total Assessment Weight": format_number(total_co_weight)
-    })
+else:
 
-
-co_total_df = pd.DataFrame(co_total_rows)
-
-st.dataframe(
-    co_total_df,
-    use_container_width=True,
-    hide_index=True
-)
-
-
-# =========================================================
-# FINAL CO ALLOCATION MATRIX
-# =========================================================
-
-st.markdown("---")
-
-st.markdown(
-    '<div class="section-title">Final CO Assessment Allocation Matrix</div>',
-    unsafe_allow_html=True
-)
-
-final_rows = []
-
-for assessment in ASSESSMENTS:
-
-    row = {
-        "Assessment": assessment,
-        "Assessment Weight": assessment_weights[assessment]
-    }
-
-    for co in CO_LIST:
-
-        row[co] = format_number(
-            allocation[assessment][co]
-        )
-
-    row["TOTAL"] = format_number(
-        sum(allocation[assessment].values())
+    st.warning(
+        "Some assessment allocations are incomplete or do not "
+        "match the syllabus maximum marks. Correct them before "
+        "generating the final report."
     )
 
-    final_rows.append(row)
-
-
-final_total_row = {
-    "Assessment": "TOTAL",
-    "Assessment Weight": sum(assessment_weights.values())
-}
-
-for co in CO_LIST:
-
-    final_total_row[co] = format_number(
-        sum(
-            allocation[assessment][co]
-            for assessment in ASSESSMENTS
-        )
-    )
-
-final_total_row["TOTAL"] = format_number(
-    sum(assessment_weights.values())
-)
-
-final_rows.append(final_total_row)
-
-final_df = pd.DataFrame(final_rows)
-
-st.dataframe(
-    final_df,
-    use_container_width=True,
-    hide_index=True
-)
-
 
 # =========================================================
-# CCA WEIGHTAGE
-# =========================================================
-
-st.markdown("---")
-
-st.markdown(
-    '<div class="section-title">CCA Weightage</div>',
-    unsafe_allow_html=True
-)
-
-cca_total_weight = st.number_input(
-    "Total CCA Weight",
-    min_value=0.0,
-    value=0.0,
-    step=1.0,
-    key="cca_total_weight"
-)
-
-total_assessment_weight = sum(
-    assessment_weights.values()
-)
-
-cca_rows = []
-
-for co in CO_LIST:
-
-    weight_per_co = sum(
-        allocation[assessment][co]
-        for assessment in ASSESSMENTS
-    )
-
-    if total_assessment_weight > 0:
-
-        weight_per_co_in_cca = (
-            weight_per_co / total_assessment_weight
-        ) * cca_total_weight
-
-    else:
-        weight_per_co_in_cca = 0.0
-
-    cca_rows.append({
-        "Course Outcome": co,
-        "Weight per CO": format_number(weight_per_co),
-        "Total Weight": format_number(total_assessment_weight),
-        "Weight per CO in CCA": format_number(weight_per_co_in_cca)
-    })
-
-
-cca_df = pd.DataFrame(cca_rows)
-
-st.dataframe(
-    cca_df,
-    use_container_width=True,
-    hide_index=True
-)
-
-
-# =========================================================
-# EXCEL REPORT GENERATION
+# EXCEL REPORT
 # =========================================================
 
 def create_excel_report():
 
     output = BytesIO()
 
-    course_details_df = pd.DataFrame(
-        [selected_course[available_details].to_dict()]
+    course_details = pd.DataFrame([
+        selected_course.to_dict()
+    ])
+
+    co_report = selected_outcomes.copy()
+
+    assessment_report = pd.DataFrame(
+        assessment_summary
     )
 
-    co_weight_rows = []
-
-    for co in CO_LIST:
-
-        co_weight_rows.append({
+    internal_report = pd.DataFrame([
+        {
             "Course Outcome": co,
-            "Total Assessment Weight": sum(
-                allocation[a][co] for a in ASSESSMENTS
-            )
-        })
-
-    co_weight_df = pd.DataFrame(co_weight_rows)
+            "Internal Weightage": internal_co_totals[co],
+            "External Weightage": external_co_totals[co],
+            "Total Weightage":
+                internal_co_totals[co]
+                + external_co_totals[co]
+        }
+        for co in CO_LIST
+    ])
 
     with pd.ExcelWriter(
         output,
         engine="openpyxl"
     ) as writer:
 
-        matrix_df.to_excel(
-            writer,
-            sheet_name="CO Assessment Matrix",
-            index=False
-        )
-
-        final_df.to_excel(
-            writer,
-            sheet_name="Final CO Allocation",
-            index=False
-        )
-
-        co_total_df.to_excel(
-            writer,
-            sheet_name="CO-wise Total",
-            index=False
-        )
-
-        cca_df.to_excel(
-            writer,
-            sheet_name="CCA Weight Summary",
-            index=False
-        )
-
-        course_details_df.to_excel(
+        course_details.to_excel(
             writer,
             sheet_name="Course Details",
             index=False
         )
 
-        co_weight_df.to_excel(
+        co_report.to_excel(
             writer,
-            sheet_name="CO Weightages",
+            sheet_name="Course Outcomes",
             index=False
         )
 
-        # Individual assessment sheets
-        for assessment in ASSESSMENTS:
+        allocation_df.to_excel(
+            writer,
+            sheet_name="Detailed Allocation",
+            index=False
+        )
 
-            individual_rows = []
+        matrix_df.to_excel(
+            writer,
+            sheet_name="CO Allocation Matrix",
+            index=False
+        )
 
-            for co in CO_LIST:
+        assessment_report.to_excel(
+            writer,
+            sheet_name="Assessment Summary",
+            index=False
+        )
 
-                individual_rows.append({
-                    "Course Outcome": co,
-                    "Teacher Assigned Weight":
-                        assessment_co_weights[assessment][co],
-                    "Allocated Assessment Weight":
-                        allocation[assessment][co]
-                })
+        internal_report.to_excel(
+            writer,
+            sheet_name="CO Weightage Summary",
+            index=False
+        )
 
-            individual_df = pd.DataFrame(individual_rows)
+        # Workbook formatting
 
-            individual_df.to_excel(
-                writer,
-                sheet_name=f"{assessment} Weightage",
-                index=False
-            )
-
-        # Format all worksheets
         workbook = writer.book
 
         header_fill = PatternFill(
-            fill_type="solid",
+            "solid",
             fgColor="174D36"
         )
 
@@ -852,72 +1190,61 @@ def create_excel_report():
             color="FFFFFF"
         )
 
-        total_fill = PatternFill(
-            fill_type="solid",
-            fgColor="E8D8B5"
-        )
-
         thin_border = Border(
-            bottom=Side(style="thin", color="D6D6D6")
+            bottom=Side(
+                style="thin",
+                color="D6D6D6"
+            )
         )
 
-        for worksheet in workbook.worksheets:
+        for ws in workbook.worksheets:
 
-            worksheet.freeze_panes = "A2"
+            ws.freeze_panes = "A2"
+            ws.auto_filter.ref = ws.dimensions
 
-            worksheet.auto_filter.ref = worksheet.dimensions
-
-            for cell in worksheet[1]:
+            for cell in ws[1]:
 
                 cell.fill = header_fill
                 cell.font = header_font
+
                 cell.alignment = Alignment(
                     horizontal="center",
-                    vertical="center"
+                    vertical="center",
+                    wrap_text=True
                 )
 
-            for row in worksheet.iter_rows(min_row=2):
+            for row in ws.iter_rows(min_row=2):
 
                 for cell in row:
 
                     cell.border = thin_border
+
                     cell.alignment = Alignment(
                         horizontal="center",
-                        vertical="center"
+                        vertical="center",
+                        wrap_text=True
                     )
 
-            # Highlight TOTAL rows
-            for row in worksheet.iter_rows(min_row=2):
+            for column_cells in ws.columns:
 
-                if str(row[0].value).upper() == "TOTAL":
+                max_length = max(
+                    (
+                        len(str(cell.value))
+                        for cell in column_cells
+                        if cell.value is not None
+                    ),
+                    default=10
+                )
 
-                    for cell in row:
-
-                        cell.fill = total_fill
-                        cell.font = Font(bold=True)
-
-            # Set column widths
-            for column_cells in worksheet.columns:
-
-                max_length = 0
-                column_letter = get_column_letter(
+                letter = get_column_letter(
                     column_cells[0].column
                 )
 
-                for cell in column_cells:
+                ws.column_dimensions[letter].width = min(
+                    max_length + 4, 45
+                )
 
-                    if cell.value is not None:
-
-                        max_length = max(
-                            max_length,
-                            len(str(cell.value))
-                        )
-
-                worksheet.column_dimensions[
-                    column_letter
-                ].width = min(max_length + 4, 35)
-
-            worksheet.row_dimensions[1].height = 25
+            ws.row_dimensions[1].height = 30
 
     output.seek(0)
 
@@ -925,41 +1252,50 @@ def create_excel_report():
 
 
 # =========================================================
-# DOWNLOAD BUTTON
+# DOWNLOAD REPORT
 # =========================================================
 
-st.markdown("---")
+st.divider()
 
 st.markdown(
-    '<div class="section-title">Download Report</div>',
+    '<div class="section-title">Download CO Allocation Report</div>',
     unsafe_allow_html=True
 )
 
-excel_file = create_excel_report()
+if valid_allocation:
 
-st.download_button(
-    label="Download CO Assessment Excel Report",
-    data=excel_file,
-    file_name="CO_Weightage_Allocation_Report.xlsx",
-    mime=(
-        "application/vnd.openxmlformats-officedocument."
-        "spreadsheetml.sheet"
-    ),
-    use_container_width=True
-)
+    report = create_excel_report()
+
+    st.download_button(
+        label="Download CO Weightage Excel Report",
+        data=report,
+        file_name=(
+            f"CO_Weightage_{selected_course_code}.xlsx"
+        ),
+        mime=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+        use_container_width=True
+    )
+
+else:
+
+    st.button(
+        "Download CO Weightage Excel Report",
+        disabled=True,
+        use_container_width=True
+    )
 
 
 # =========================================================
-# RESET BUTTON
+# RESET
 # =========================================================
-
-st.markdown("---")
 
 if st.button("Reset Dashboard"):
 
     st.cache_data.clear()
 
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
+    st.session_state.clear()
 
     st.rerun()
