@@ -751,7 +751,7 @@ def build_matrix():
         rows.append(row)
 
     total_row = {
-        "Assessment": "TOTAL",
+        "Assessment": "TOTAL (Internal Marks)",
         "Marks Conducted": sum(
             current_assessment_data[a]["conducted_marks"]
             for a in ASSESSMENTS
@@ -768,6 +768,20 @@ def build_matrix():
     total_row["TOTAL"] = sum(total_row[co] for co in co_list)
 
     rows.append(total_row)
+
+    # Fixed marks row: the fixed weightage given for each CO.
+    fixed_row = {
+        "Assessment": "FIXED MARKS (CO Weightage)",
+        "Marks Conducted": None,
+        "Assessment Weight": None
+    }
+
+    for co in co_list:
+        fixed_row[co] = fixed_co_weights[co]
+
+    fixed_row["TOTAL"] = sum(fixed_co_weights.values())
+
+    rows.append(fixed_row)
 
     df = pd.DataFrame(rows)
 
