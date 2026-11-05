@@ -23,8 +23,6 @@ ASSESSMENTS = ["PA1", "PA2", "LE1", "LE2"]
 # LE (attendance, etc.) is not an exam, so it has a single marks field.
 EXAM_ASSESSMENTS = ["PA1", "PA2"]
 
-# Program Outcomes / Program Specific Outcomes used in the CO-PO matrix.
-PO_LIST = [f"PO{i}" for i in range(1, 13)] + [f"PSO{i}" for i in range(1, 4)]
 
 
 # ==================================================
@@ -823,103 +821,6 @@ live_allocation_df, _ = build_matrix()
 
 
 # ==================================================
-# CO-PO MAPPING AND FINAL CO ATTAINMENT
-# ==================================================
-
-st.markdown(
-    '<div class="section-heading">CO-PO Mapping</div>',
-    unsafe_allow_html=True
-)
-
-st.write("*Enter the Final CO attainment for each Course Outcome:*")
-
-final_columns = st.columns(min(len(co_list), 4))
-
-final_co_values = {}
-
-for i, co in enumerate(co_list):
-
-    with final_columns[i % len(final_columns)]:
-
-        final_co_values[co] = st.number_input(
-            f"{co} Final Attainment",
-            min_value=0.0,
-            value=0.0,
-            step=0.01,
-            key=f"final_co_{co}"
-        )
-
-st.write(
-    "*Enter the CO-PO mapping strength "
-    "(0 = no mapping, 1 = low, 2 = medium, 3 = high):*"
-)
-
-mapping_input_df = pd.DataFrame(
-    {"Course Outcome": co_list, **{po: 0.0 for po in PO_LIST}}
-)
-
-edited_mapping = st.data_editor(
-    mapping_input_df,
-    key=f"co_po_mapping_editor_{len(co_list)}",
-    use_container_width=True,
-    hide_index=True,
-    num_rows="fixed",
-    disabled=["Course Outcome"],
-    column_config={
-        po: st.column_config.NumberColumn(
-            po, min_value=0.0, max_value=3.0, step=1.0
-        )
-        for po in PO_LIST
-    }
-)
-
-
-def build_co_po_matrix(mapping_df, final_values):
-    """
-    Course-level PO_j =
-        sum_i( mapping(CO_i -> PO_j) x Final CO_i )
-        / sum_i( mapping(CO_i -> PO_j) )
-    A PO with no mapping at all is left blank.
-    """
-
-    mapping = mapping_df.set_index("Course Outcome")[PO_LIST].astype(float)
-    mapping = mapping.fillna(0.0)
-
-    final_series = pd.Series(final_values).reindex(mapping.index)
-
-    po_values = {}
-
-    for po in PO_LIST:
-
-        denominator = mapping[po].sum()
-
-        if denominator > 0:
-            po_values[po] = (mapping[po] * final_series).sum() / denominator
-        else:
-            po_values[po] = None
-
-    matrix = mapping.copy()
-    matrix.insert(0, "Final CO", final_series)
-    matrix = matrix.reset_index()
-
-    po_row = {"Course Outcome": "Course-level PO", "Final CO": None}
-    po_row.update(po_values)
-
-    matrix = pd.concat(
-        [matrix, pd.DataFrame([po_row])],
-        ignore_index=True
-    )
-
-    numeric_cols = ["Final CO"] + PO_LIST
-    matrix[numeric_cols] = matrix[numeric_cols].astype(float).round(2)
-
-    return matrix
-
-
-co_po_matrix_df = build_co_po_matrix(edited_mapping, final_co_values)
-
-
-# ==================================================
 # CALCULATE ALLOCATION BUTTON
 # ==================================================
 
@@ -1009,23 +910,6 @@ if calculate_button:
             )
 
         # ------------------------------------------
-        # CO-PO SUMMARY MATRIX
-        # ------------------------------------------
-
-        st.markdown(
-            '<div class="section-heading">'
-            'CO-PO Summary Matrix'
-            '</div>',
-            unsafe_allow_html=True
-        )
-
-        st.dataframe(
-            co_po_matrix_df,
-            use_container_width=True,
-            hide_index=True
-        )
-
-        # ------------------------------------------
         # EXCEL EXPORT
         # ------------------------------------------
 
@@ -1105,13 +989,6 @@ if calculate_button:
                     sheet_name=f"{assessment} CO Weightage",
                     index=False
                 )
-
-            # CO-PO summary matrix
-            co_po_matrix_df.to_excel(
-                writer,
-                sheet_name="CO-PO Matrix",
-                index=False
-            )
 
             # Course details
             course_details_df.to_excel(
