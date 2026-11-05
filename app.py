@@ -379,6 +379,38 @@ fixed_weightage_sum = sum(fixed_co_weights.values())
 
 
 # ==================================================
+# INTERNAL MARKS PER ASSESSMENT (GIVEN FIRST)
+# ==================================================
+
+st.markdown(
+    '<div class="section-heading">Internal Marks per Assessment</div>',
+    unsafe_allow_html=True
+)
+
+st.write(
+    "*Enter the marks each assessment carries in the internal "
+    "assessment. Exam marks are converted to this scale in the "
+    "summary matrix:*"
+)
+
+internal_columns = st.columns(len(ASSESSMENTS))
+
+internal_marks = {}
+
+for i, assessment in enumerate(ASSESSMENTS):
+
+    with internal_columns[i]:
+
+        internal_marks[assessment] = st.number_input(
+            f"{assessment} Internal Marks",
+            min_value=0.0,
+            value=0.0,
+            step=0.5,
+            key=f"{assessment}_total_weight"
+        )
+
+
+# ==================================================
 # SESSION STATE INITIALIZATION
 # ==================================================
 
@@ -470,48 +502,32 @@ def assessment_input(assessment):
             unsafe_allow_html=True
         )
 
+        total_weight = internal_marks[assessment]
+
         if assessment in EXAM_ASSESSMENTS:
 
-            in_col1, in_col2 = st.columns(2)
-
-            with in_col1:
-                conducted_marks = st.number_input(
-                    f"{assessment} Exam Conducted For (Marks)",
-                    min_value=0.0,
-                    value=0.0,
-                    step=0.5,
-                    key=f"{assessment}_conducted_marks"
-                )
-
-            with in_col2:
-                total_weight = st.number_input(
-                    f"{assessment} Convert To (Marks)",
-                    min_value=0.0,
-                    value=0.0,
-                    step=0.5,
-                    key=f"{assessment}_total_weight"
-                )
+            conducted_marks = st.number_input(
+                f"{assessment} Exam Conducted For (Marks)",
+                min_value=0.0,
+                value=0.0,
+                step=0.5,
+                key=f"{assessment}_conducted_marks"
+            )
 
             if conducted_marks > 0 and total_weight > 0:
                 st.caption(
-                    f"{conducted_marks:g} marks converted to "
-                    f"{total_weight:g} marks "
+                    f"Exam of {conducted_marks:g} marks is converted to "
+                    f"{total_weight:g} marks in the summary matrix "
                     f"(factor = {total_weight:g} / {conducted_marks:g} "
                     f"= {total_weight / conducted_marks:.3f})"
                 )
 
         else:
 
-            # No exam and no conversion (e.g. attendance): one marks field.
-            total_weight = st.number_input(
-                f"{assessment} Total Marks",
-                min_value=0.0,
-                value=0.0,
-                step=0.5,
-                key=f"{assessment}_total_weight"
-            )
-
+            # Not an exam (e.g. attendance): no conversion.
             conducted_marks = total_weight   # factor = 1
+
+            st.caption(f"Carries {total_weight:g} internal marks (no conversion).")
 
         st.write("*Select Course Outcomes:*")
 
@@ -839,7 +855,7 @@ if calculate_button:
 
         if d["conducted_marks"] > 0 and d["total_weight"] <= 0:
             errors.append(
-                f"{a}: enter the marks it should be converted to."
+                f"{a}: enter its internal marks in the Internal Marks per Assessment section."
             )
 
     if errors:
