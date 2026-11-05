@@ -470,7 +470,7 @@ def assessment_input(assessment):
 
         with in_col1:
             conducted_marks = st.number_input(
-                f"{assessment} Marks Conducted For",
+                f"{assessment} Exam Conducted For (Marks)",
                 min_value=0.0,
                 value=0.0,
                 step=0.5,
@@ -479,7 +479,7 @@ def assessment_input(assessment):
 
         with in_col2:
             total_weight = st.number_input(
-                f"{assessment} Total Weightage (after conversion)",
+                f"{assessment} Convert To (Marks)",
                 min_value=0.0,
                 value=0.0,
                 step=0.5,
@@ -488,8 +488,9 @@ def assessment_input(assessment):
 
         if conducted_marks > 0 and total_weight > 0:
             st.caption(
-                f"Conversion factor: {total_weight:g} / {conducted_marks:g} "
-                f"= {total_weight / conducted_marks:.3f}"
+                f"{conducted_marks:g} marks converted to {total_weight:g} marks "
+                f"(factor = {total_weight:g} / {conducted_marks:g} "
+                f"= {total_weight / conducted_marks:.3f})"
             )
 
         st.write("*Select Course Outcomes:*")
@@ -739,8 +740,8 @@ def build_matrix():
 
         row = {
             "Assessment": assessment,
-            "Marks Conducted": details["conducted_marks"],
-            "Assessment Weight": details["total_weight"]
+            "Conducted Marks": details["conducted_marks"],
+            "Converted Marks": details["total_weight"]
         }
 
         for co in co_list:
@@ -751,12 +752,12 @@ def build_matrix():
         rows.append(row)
 
     total_row = {
-        "Assessment": "TOTAL (Internal Marks)",
-        "Marks Conducted": sum(
+        "Assessment": "TOTAL",
+        "Conducted Marks": sum(
             current_assessment_data[a]["conducted_marks"]
             for a in ASSESSMENTS
         ),
-        "Assessment Weight": sum(
+        "Converted Marks": sum(
             current_assessment_data[a]["total_weight"]
             for a in ASSESSMENTS
         )
@@ -769,24 +770,10 @@ def build_matrix():
 
     rows.append(total_row)
 
-    # Fixed marks row: the fixed weightage given for each CO.
-    fixed_row = {
-        "Assessment": "FIXED MARKS (CO Weightage)",
-        "Marks Conducted": None,
-        "Assessment Weight": None
-    }
-
-    for co in co_list:
-        fixed_row[co] = fixed_co_weights[co]
-
-    fixed_row["TOTAL"] = sum(fixed_co_weights.values())
-
-    rows.append(fixed_row)
-
     df = pd.DataFrame(rows)
 
     numeric_cols = (
-        ["Marks Conducted", "Assessment Weight"] + co_list + ["TOTAL"]
+        ["Conducted Marks", "Converted Marks"] + co_list + ["TOTAL"]
     )
 
     df[numeric_cols] = df[numeric_cols].round(2)
@@ -835,6 +822,11 @@ if calculate_button:
                 f"{a}: enter the marks the exam was conducted for."
             )
 
+        if d["conducted_marks"] > 0 and d["total_weight"] <= 0:
+            errors.append(
+                f"{a}: enter the marks it should be converted to."
+            )
+
     if errors:
 
         for error in errors:
@@ -869,8 +861,8 @@ if calculate_button:
 
         with metric1:
             st.metric(
-                "Total Assessment Weight",
-                f"{final_total_row['Assessment Weight']:.2f}"
+                "Total Converted Marks",
+                f"{final_total_row['Converted Marks']:.2f}"
             )
 
         with metric2:
@@ -954,7 +946,7 @@ if calculate_button:
                         round(raw_allocations[assessment][co], 2)
                         for co in selected
                     ],
-                    "Converted Weight": [
+                    "Converted Marks": [
                         round(allocations[assessment][co], 2)
                         for co in selected
                     ]
