@@ -1,578 +1,1002 @@
-
 import streamlit as st
 import pandas as pd
 from pathlib import Path
 from io import BytesIO
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
+from openpyxl.styles import Font, PatternFill, Alignment
 
-# =========================================================
+
+# ==================================================
 # PAGE CONFIGURATION
-# =========================================================
+# ==================================================
 
 st.set_page_config(
-    page_title="MGU CO Weightage Allocation Dashboard",
+    page_title="CO Weightage Allocation Dashboard",
     page_icon="📊",
     layout="wide"
 )
 
-# =========================================================
-# THEME
-# =========================================================
+EXCEL_FILE = Path(__file__).parent / "Course Group.xlsx"
+
+ASSESSMENTS = ["PA1", "PA2", "LE1", "LE2"]
+
+
+# ==================================================
+# CUSTOM CSS - FOREST GREEN + CHAMPAGNE
+# ==================================================
 
 st.markdown("""
 <style>
 .stApp {
-    background-color: #FFFFFF;
-    color: #17211C;
+    background-color: #F3F6F1;
 }
-h1, h2, h3, h4, p, label {
-    color: #17211C !important;
+
+/* Dashboard header */
+.dashboard-header {
+    background: linear-gradient(120deg, #183D32, #285C49);
+    padding: 30px 32px;
+    border-radius: 12px;
+    margin-bottom: 25px;
+    border-bottom: 5px solid #C8B98A;
 }
-.dashboard-title {
-    color: #174D36;
+
+.dashboard-header h1 {
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
     font-size: 30px;
-    font-weight: bold;
+    font-weight: 750;
+    margin: 0;
 }
-.section-title {
-    color: #174D36;
+
+.dashboard-header .dashboard-subtitle {
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
+    font-size: 16px;
+    font-weight: 700;
+    margin-top: 8px;
+    opacity: 1 !important;
+}
+
+/* Normal text */
+.stApp p,
+.stApp label,
+.stApp li {
+    color: #171717 !important;
+}
+
+/* Section headings */
+.section-heading {
+    color: #183D32 !important;
     font-size: 21px;
-    font-weight: bold;
+    font-weight: 750;
+    margin-top: 22px;
+    margin-bottom: 14px;
+    border-left: 5px solid #C8B98A;
+    padding-left: 12px;
 }
-.stButton > button {
-    background-color: #174D36;
-    color: white;
-    border-radius: 7px;
-    font-weight: bold;
+
+/* Assessment cards */
+.assessment-title {
+    color: #183D32 !important;
+    font-size: 20px;
+    font-weight: 750;
 }
-.stButton > button:hover {
-    background-color: #246B4B;
-    color: white;
+
+/* Input fields */
+.stTextInput input,
+.stNumberInput input {
+    color: #171717 !important;
+    -webkit-text-fill-color: #171717 !important;
+    background-color: #FFFFFF !important;
+}
+
+/* Buttons */
+.stButton > button,
+.stDownloadButton > button {
+    background-color: #183D32 !important;
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
+    border: 2px solid #C8B98A !important;
+    border-radius: 8px;
+    font-weight: 700 !important;
+    padding: 10px 22px;
+}
+
+.stButton > button *,
+.stDownloadButton > button * {
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
+    font-weight: 700 !important;
+}
+
+.stButton > button:hover,
+.stDownloadButton > button:hover {
+    background-color: #285C49 !important;
+}
+
+/* Metrics */
+[data-testid="stMetric"] {
+    background-color: #FFFFFF;
+    border: 1px solid #DCE5DA;
+    border-left: 4px solid #C8B98A;
+    border-radius: 10px;
+    padding: 15px;
+}
+
+[data-testid="stMetricLabel"],
+[data-testid="stMetricValue"] {
+    color: #183D32 !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# =========================================================
-# FILE PATH
-# =========================================================
 
-BASE_DIR = Path(__file__).parent
-COURSE_GROUP_PATH = BASE_DIR / "Course Group.xlsx"
+# ==================================================
+# HEADER
+# ==================================================
 
-# =========================================================
-# LOAD COURSE GROUP EXCEL
-# =========================================================
+st.markdown("""
+<div class="dashboard-header">
+    <h1>CO Weightage Allocation Dashboard</h1>
+    <div class="dashboard-subtitle">
+        Course Outcome Assessment Weightage Management System
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+
+# ==================================================
+# LOAD COURSE DETAILS
+# ==================================================
 
 @st.cache_data
 def load_course_data():
 
-    if not COURSE_GROUP_PATH.exists():
-        raise FileNotFoundError(
-            "Course Group.xlsx was not found in the app folder."
+    raw = pd.read_excel(EXCEL_FILE, header=None)
+
+    header_row = None
+
+    for i in range(min(15, len(raw))):
+
+        headings = [
+            " ".join(
+                str(value).replace("\u00a0", " ").split()
+            ).strip().lower()
+            for value in raw.iloc[i]
+        ]
+
+        if (
+            ("department" in headings or "departmen" in headings)
+            and "program type" in headings
+            and "program" in headings
+        ):
+            header_row = i
+            break
+
+    if header_row is None:
+        raise ValueError(
+            "Could not identify the Excel header row."
         )
 
-    # The actual workbook has its column headings in row 2
-    df = pd.read_excel(
-        COURSE_GROUP_PATH,
-        sheet_name="Sheet1",
-        header=1,
-        engine="openpyxl"
-    )
+    df = pd.read_excel(EXCEL_FILE, header=header_row)
 
     df.columns = [
-        str(col).strip().replace("\n", " ")
+        " ".join(
+            str(col).replace("\u00a0", " ").replace("\n", " ").split()
+        ).strip()
         for col in df.columns
     ]
 
-    # Remove completely empty rows and columns
-    df = df.dropna(how="all")
-    df = df.dropna(axis=1, how="all")
+    # Accept the occasional missing final letter in Department.
+    if "Department" not in df.columns and "Departmen" in df.columns:
+        df.rename(columns={"Departmen": "Department"}, inplace=True)
 
     required_columns = [
-        "Program Code",
+        "Department",
+        "Program Type",
         "Program",
-        "ISA",
-        "ESA",
-        "CO"
+        "Program Code"
     ]
+
+    missing = [
+        col for col in required_columns
+        if col not in df.columns
+    ]
+
+    if missing:
+        raise ValueError(
+            "Missing Excel columns: " + ", ".join(missing)
+        )
+
+    df = df[required_columns].copy()
 
     for col in required_columns:
-        if col not in df.columns:
-            raise ValueError(
-                f"Required column '{col}' is missing from Course Group.xlsx."
-            )
+        df[col] = df[col].astype("string").str.strip()
 
-    # Clean course identifiers and names
-    df["Program Code"] = (
-        df["Program Code"]
-        .astype("string")
-        .str.strip()
-    )
+    df = df.dropna(subset=required_columns)
 
-    df["Program"] = (
-        df["Program"]
-        .astype("string")
-        .str.strip()
-    )
+    for col in required_columns:
+        df = df[df[col] != ""]
 
-    # Convert marks to numeric values
-    numeric_columns = [
-        "ISA",
-        "ESA",
-        "ISA PRACTICAL",
-        "ESA PRACTICAL",
-        "CO",
-        "Credit"
-    ]
+    return df.drop_duplicates().reset_index(drop=True)
 
-    for col in numeric_columns:
-        if col in df.columns:
-            df[col] = pd.to_numeric(
-                df[col],
-                errors="coerce"
-            ).fillna(0)
-
-    # Remove rows without course codes
-    df = df[
-        df["Program Code"].notna()
-        & (df["Program Code"].astype(str).str.strip() != "")
-    ].copy()
-
-    return df
-
-
-# =========================================================
-# LOAD DATA
-# =========================================================
 
 try:
-    course_df = load_course_data()
+    course_data = load_course_data()
+
+except FileNotFoundError:
+    st.error(
+        "Course Group.xlsx was not found. "
+        "Place it in the same folder as app.py."
+    )
+    st.stop()
+
+except PermissionError:
+    st.error(
+        "Unable to access Course Group.xlsx. "
+        "Close the Excel file if it is open and check file permissions."
+    )
+    st.stop()
 
 except Exception as e:
-    st.error(f"Excel loading error: {e}")
+    st.error(f"Unable to load course details: {e}")
     st.stop()
 
 
-# =========================================================
-# HEADER
-# =========================================================
+# ==================================================
+# COURSE DETAILS
+# ==================================================
 
 st.markdown(
-    '<div class="dashboard-title">'
-    'MGU CO Weightage Allocation Dashboard'
+    '<div class="section-heading">Course Details</div>',
+    unsafe_allow_html=True
+)
+
+col1, col2 = st.columns(2)
+
+with col1:
+
+    departments = sorted(
+        course_data["Department"].unique().tolist()
+    )
+
+    department = st.selectbox(
+        "Department",
+        departments
+    )
+
+    program_types = sorted(
+        course_data.loc[
+            course_data["Department"] == department,
+            "Program Type"
+        ].unique().tolist()
+    )
+
+    program_type = st.selectbox(
+        "Program Type",
+        program_types
+    )
+
+with col2:
+
+    filtered = course_data[
+        (course_data["Department"] == department) &
+        (course_data["Program Type"] == program_type)
+    ]
+
+    programs = sorted(filtered["Program"].unique().tolist())
+
+    program = st.selectbox(
+        "Course Name",
+        programs
+    )
+
+    selected_course = filtered[
+        filtered["Program"] == program
+    ]
+
+    course_codes = selected_course["Program Code"].unique()
+
+    course_code = course_codes[0] if len(course_codes) else ""
+
+    st.text_input(
+        "Course Code",
+        value=str(course_code),
+        disabled=True
+    )
+
+
+# ==================================================
+# COURSE OUTCOMES - FIXED WEIGHTAGES
+# ==================================================
+
+st.markdown(
+    '<div class="section-heading">Course Outcomes</div>',
+    unsafe_allow_html=True
+)
+
+number_of_cos = st.number_input(
+    "Number of Course Outcomes",
+    min_value=1,
+    max_value=20,
+    value=4,
+    step=1
+)
+
+co_list = [
+    f"CO{i}" for i in range(1, int(number_of_cos) + 1)
+]
+
+st.write("*Enter the fixed weightage for each Course Outcome:*")
+
+fixed_columns = st.columns(min(len(co_list), 4))
+
+fixed_co_weights = {}
+
+for i, co in enumerate(co_list):
+
+    with fixed_columns[i % len(fixed_columns)]:
+
+        fixed_co_weights[co] = st.number_input(
+            f"{co} Fixed Weightage",
+            min_value=0.0,
+            value=1.0,
+            step=0.5,
+            key=f"fixed_{co}"
+        )
+
+# Denominator always uses ALL fixed CO weightages.
+fixed_weightage_sum = sum(fixed_co_weights.values())
+
+
+# ==================================================
+# SESSION STATE INITIALIZATION
+# ==================================================
+
+# Each assessment has its own independent CO weightages.
+
+if "assessment_co_values" not in st.session_state:
+    st.session_state.assessment_co_values = {}
+
+for assessment in ASSESSMENTS:
+
+    if assessment not in st.session_state.assessment_co_values:
+        st.session_state.assessment_co_values[assessment] = {}
+
+    for co in co_list:
+
+        key = f"{assessment}_{co}_assessment_weight"
+
+        if co not in st.session_state.assessment_co_values[assessment]:
+            st.session_state.assessment_co_values[assessment][co] = (
+                st.session_state.get(key, 0.0)
+            )
+
+
+# ==================================================
+# SYNCHRONIZATION CALLBACKS
+# ==================================================
+
+def update_from_assessment(assessment, co):
+
+    key = f"{assessment}_{co}_assessment_weight"
+
+    value = st.session_state[key]
+
+    st.session_state.assessment_co_values[
+        assessment
+    ][co] = value
+
+    # Rebuild the editor from the updated assessment values.
+    st.session_state.pop("co_weight_editor", None)
+
+
+def update_from_table():
+
+    editor_state = st.session_state.get(
+        "co_weight_editor", {}
+    )
+
+    edited_rows = editor_state.get("edited_rows", {})
+
+    for row_index, changes in edited_rows.items():
+
+        # The TOTAL row (last row) is not an assessment.
+        if int(row_index) >= len(ASSESSMENTS):
+            continue
+
+        assessment = ASSESSMENTS[int(row_index)]
+
+        for co, value in changes.items():
+
+            if co in co_list:
+
+                value = float(value)
+
+                st.session_state.assessment_co_values[
+                    assessment
+                ][co] = value
+
+                widget_key = (
+                    f"{assessment}_{co}_assessment_weight"
+                )
+
+                # Update the corresponding assessment input.
+                st.session_state[widget_key] = value
+
+    # Reset editor state so it displays the synchronized values.
+    st.session_state.pop("co_weight_editor", None)
+
+
+# ==================================================
+# ASSESSMENT INPUT FUNCTION
+# ==================================================
+
+def assessment_input(assessment):
+
+    with st.container(border=True):
+
+        st.markdown(
+            f'<div class="assessment-title">{assessment}</div>',
+            unsafe_allow_html=True
+        )
+
+        in_col1, in_col2 = st.columns(2)
+
+        with in_col1:
+            conducted_marks = st.number_input(
+                f"{assessment} Marks Conducted For",
+                min_value=0.0,
+                value=0.0,
+                step=0.5,
+                key=f"{assessment}_conducted_marks"
+            )
+
+        with in_col2:
+            total_weight = st.number_input(
+                f"{assessment} Total Weightage (after conversion)",
+                min_value=0.0,
+                value=0.0,
+                step=0.5,
+                key=f"{assessment}_total_weight"
+            )
+
+        if conducted_marks > 0 and total_weight > 0:
+            st.caption(
+                f"Conversion factor: {total_weight:g} / {conducted_marks:g} "
+                f"= {total_weight / conducted_marks:.3f}"
+            )
+
+        st.write("*Select Course Outcomes:*")
+
+        checkbox_columns = st.columns(min(len(co_list), 5))
+
+        selected_cos = []
+
+        for i, co in enumerate(co_list):
+
+            with checkbox_columns[i % len(checkbox_columns)]:
+
+                selected = st.checkbox(
+                    co,
+                    key=f"{assessment}_{co}_selected"
+                )
+
+                if selected:
+                    selected_cos.append(co)
+
+        assessment_weights = {}
+
+        if selected_cos:
+
+            st.write("*Assessment CO Weightage:*")
+
+            weight_columns = st.columns(min(len(selected_cos), 4))
+
+            for i, co in enumerate(selected_cos):
+
+                key = f"{assessment}_{co}_assessment_weight"
+
+                # Initialize each selected assessment CO with 1.0
+                # if it has not previously been assigned a value.
+                if key not in st.session_state:
+                    st.session_state[key] = 1.0
+                    st.session_state.assessment_co_values[
+                        assessment
+                    ][co] = 1.0
+
+                with weight_columns[i % len(weight_columns)]:
+
+                    value = st.number_input(
+                        f"{co} Assessment Weightage",
+                        min_value=0.0,
+                        step=0.5,
+                        key=key,
+                        on_change=update_from_assessment,
+                        args=(assessment, co)
+                    )
+
+                    assessment_weights[co] = value
+
+                    st.session_state.assessment_co_values[
+                        assessment
+                    ][co] = value
+
+        return conducted_marks, total_weight, selected_cos, assessment_weights
+
+
+# ==================================================
+# ASSESSMENT COMPONENTS
+# ==================================================
+
+st.markdown(
+    '<div class="section-heading">Assessment Components</div>',
+    unsafe_allow_html=True
+)
+
+assessment_results = {}
+
+for assessment in ASSESSMENTS:
+
+    assessment_results[assessment] = assessment_input(
+        assessment
+    )
+
+
+# ==================================================
+# CO-WISE TOTAL ASSESSMENT WEIGHT TABLE
+# ==================================================
+
+st.markdown(
+    '<div class="section-heading">'
+    'CO-wise Total Assessment Weight'
     '</div>',
     unsafe_allow_html=True
 )
 
 st.caption(
-    "Outcome-Based Education | Course Outcome "
-    "Assessment Marks Allocation"
+    "Edit the assessment CO weightages directly in this table. "
+    "Changes will also update the corresponding assessment inputs."
 )
 
-st.divider()
+# Build the raw assessment-specific weightage table.
 
+table_rows = []
 
-# =========================================================
-# COURSE SELECTION
-# =========================================================
+for assessment in ASSESSMENTS:
 
-st.markdown(
-    '<div class="section-title">Course Selection</div>',
-    unsafe_allow_html=True
-)
+    row = {"Assessment": assessment}
 
-course_df["Course Display"] = (
-    course_df["Program Code"].astype(str)
-    + " - "
-    + course_df["Program"].astype(str)
-)
+    for co in co_list:
 
-course_options = (
-    course_df["Course Display"]
-    .drop_duplicates()
-    .sort_values()
-    .tolist()
-)
+        row[co] = st.session_state.assessment_co_values[
+            assessment
+        ].get(co, 0.0)
 
-if not course_options:
-    st.error("No courses were found in Course Group.xlsx.")
-    st.stop()
+    table_rows.append(row)
 
-selected_course_display = st.selectbox(
-    "Select Course",
-    course_options
-)
+table_df = pd.DataFrame(table_rows)
 
-selected_course = course_df[
-    course_df["Course Display"] == selected_course_display
-].iloc[0]
+# Add the raw-weightage TOTAL row.
+total_table_row = {"Assessment": "TOTAL"}
 
-course_code = str(selected_course["Program Code"])
-course_name = str(selected_course["Program"])
+for co in co_list:
 
-
-# =========================================================
-# COURSE INFORMATION
-# =========================================================
-
-st.markdown("### Selected Course")
-
-info1, info2, info3 = st.columns(3)
-
-info1.metric(
-    "Course Code",
-    course_code
-)
-
-info2.metric(
-    "Course Name",
-    course_name
-)
-
-co_count = int(selected_course["CO"])
-
-info3.metric(
-    "Number of COs",
-    co_count
-)
-
-if co_count <= 0:
-    st.warning(
-        "The selected course does not have a valid CO count."
+    total_table_row[co] = sum(
+        st.session_state.assessment_co_values[
+            assessment
+        ].get(co, 0.0)
+        for assessment in ASSESSMENTS
     )
-    st.stop()
 
-# =========================================================
-# CREATE CO LIST
-# =========================================================
+table_df = pd.concat(
+    [table_df, pd.DataFrame([total_table_row])],
+    ignore_index=True
+)
 
-CO_LIST = [
-    f"CO{i}"
-    for i in range(1, co_count + 1)
-]
+# Editable assessment rows. TOTAL row is ignored on edit.
+disabled_columns = ["Assessment"]
+
+edited_table = st.data_editor(
+    table_df,
+    key="co_weight_editor",
+    use_container_width=True,
+    hide_index=True,
+    num_rows="fixed",
+    disabled=disabled_columns,
+    column_config={
+        "Assessment": st.column_config.TextColumn(
+            "Assessment",
+            disabled=True
+        )
+    },
+    on_change=update_from_table
+)
 
 
-# =========================================================
-# GET ASSESSMENT COMPONENTS
-# =========================================================
+# ==================================================
+# RE-CALCULATE RAW VALUES FROM SYNCHRONIZED STATE
+# ==================================================
 
-assessment_columns = [
-    ("ISA", "Internal"),
-    ("ESA", "External"),
-    ("ISA PRACTICAL", "Internal"),
-    ("ESA PRACTICAL", "External")
-]
+current_assessment_data = {}
 
-assessments = []
+for assessment in ASSESSMENTS:
 
-for column_name, assessment_type in assessment_columns:
+    conducted_marks, total_weight, selected_cos, _ = (
+        assessment_results[assessment]
+    )
 
-    if column_name in course_df.columns:
+    current_weights = {
+        co: st.session_state.assessment_co_values[assessment].get(co, 0.0)
+        for co in co_list
+    }
 
-        maximum_marks = float(
-            selected_course[column_name]
+    current_assessment_data[assessment] = {
+        "conducted_marks": conducted_marks,
+        "total_weight": total_weight,
+        "selected_cos": selected_cos,
+        "weights": current_weights
+    }
+
+
+# ==================================================
+# ALLOCATION FUNCTION
+# ==================================================
+
+def calculate_allocation(
+    conducted_marks,
+    total_weight,
+    selected_cos,
+    assessment_weights
+):
+    """
+    Returns two dicts:
+      raw       -> CO marks on the conducted-marks scale (e.g. out of 20)
+      converted -> CO marks on the weightage scale (e.g. out of 30)
+    """
+
+    raw = {co: 0.0 for co in co_list}
+    converted = {co: 0.0 for co in co_list}
+
+    if fixed_weightage_sum <= 0:
+        return raw, converted
+
+    # e.g. weightage 30 / conducted 20 = 1.5
+    factor = (
+        total_weight / conducted_marks
+        if conducted_marks > 0 else 0.0
+    )
+
+    for co in selected_cos:
+
+        raw[co] = (
+            assessment_weights.get(co, 0.0)
+            / fixed_weightage_sum
+        ) * conducted_marks
+
+        converted[co] = raw[co] * factor
+
+    return raw, converted
+
+
+# ==================================================
+# CALCULATE ALL ASSESSMENT ALLOCATIONS
+# ==================================================
+
+raw_allocations = {}
+allocations = {}   # converted values, used in the matrix
+
+for assessment in ASSESSMENTS:
+
+    d = current_assessment_data[assessment]
+
+    raw_allocations[assessment], allocations[assessment] = (
+        calculate_allocation(
+            d["conducted_marks"],
+            d["total_weight"],
+            d["selected_cos"],
+            d["weights"]
+        )
+    )
+
+
+# ==================================================
+# HELPER: BUILD SUMMARY MATRIX
+# ==================================================
+
+def build_matrix():
+
+    rows = []
+
+    for assessment in ASSESSMENTS:
+
+        details = current_assessment_data[assessment]
+
+        row = {
+            "Assessment": assessment,
+            "Marks Conducted": details["conducted_marks"],
+            "Assessment Weight": details["total_weight"]
+        }
+
+        for co in co_list:
+            row[co] = allocations[assessment][co]
+
+        row["TOTAL"] = sum(allocations[assessment].values())
+
+        rows.append(row)
+
+    total_row = {
+        "Assessment": "TOTAL",
+        "Marks Conducted": sum(
+            current_assessment_data[a]["conducted_marks"]
+            for a in ASSESSMENTS
+        ),
+        "Assessment Weight": sum(
+            current_assessment_data[a]["total_weight"]
+            for a in ASSESSMENTS
+        )
+    }
+
+    for co in co_list:
+        total_row[co] = sum(allocations[a][co] for a in ASSESSMENTS)
+
+    total_row["TOTAL"] = sum(total_row[co] for co in co_list)
+
+    rows.append(total_row)
+
+    df = pd.DataFrame(rows)
+
+    numeric_cols = (
+        ["Marks Conducted", "Assessment Weight"] + co_list + ["TOTAL"]
+    )
+
+    df[numeric_cols] = df[numeric_cols].round(2)
+
+    return df, total_row
+
+
+# ==================================================
+# LIVE CO-WISE ALLOCATION SUMMARY
+# ==================================================
+
+live_allocation_df, _ = build_matrix()
+
+
+# ==================================================
+# CALCULATE ALLOCATION BUTTON
+# ==================================================
+
+st.markdown("---")
+
+calculate_button = st.button(
+    "Calculate Allocation",
+    use_container_width=True
+)
+
+
+# ==================================================
+# FINAL SUMMARY MATRIX AND EXCEL REPORT
+# ==================================================
+
+if calculate_button:
+
+    errors = []
+
+    if fixed_weightage_sum <= 0:
+        errors.append(
+            "The sum of fixed CO weightages must be greater than zero."
         )
 
-        if maximum_marks > 0:
+    for a in ASSESSMENTS:
 
-            assessments.append({
-                "Assessment": column_name,
-                "Assessment Type": assessment_type,
-                "Maximum Marks": maximum_marks
-            })
+        d = current_assessment_data[a]
 
-if not assessments:
-    st.error(
-        "No assessment marks are available for this course."
-    )
-    st.stop()
-
-assessments_df = pd.DataFrame(assessments)
-
-
-# =========================================================
-# ASSESSMENT-WISE CO ALLOCATION
-# =========================================================
-
-st.divider()
-
-st.markdown(
-    '<div class="section-title">'
-    'CO Marks Allocation'
-    '</div>',
-    unsafe_allow_html=True
-)
-
-st.write(
-    "Allocate the maximum marks of each assessment "
-    "among the Course Outcomes."
-)
-
-allocation_data = []
-
-valid_allocation = True
-
-for assessment in assessments:
-
-    assessment_name = assessment["Assessment"]
-    assessment_type = assessment["Assessment Type"]
-    maximum_marks = assessment["Maximum Marks"]
-
-    st.markdown(f"### {assessment_name}")
-
-    st.caption(
-        f"Type: {assessment_type} | "
-        f"Maximum Marks: {maximum_marks:g}"
-    )
-
-    columns = st.columns(min(len(CO_LIST), 4))
-
-    assessment_total = 0.0
-
-    for i, co in enumerate(CO_LIST):
-
-        key = (
-            f"allocation_{course_code}_"
-            f"{assessment_name}_{co}"
-        )
-
-        if key not in st.session_state:
-            st.session_state[key] = 0.0
-
-        with columns[i % len(columns)]:
-
-            marks = st.number_input(
-                f"{co} Marks",
-                min_value=0.0,
-                step=0.5,
-                key=key
+        if d["total_weight"] > 0 and d["conducted_marks"] <= 0:
+            errors.append(
+                f"{a}: enter the marks the exam was conducted for."
             )
 
-        assessment_total += marks
+    if errors:
 
-        allocation_data.append({
-            "Assessment": assessment_name,
-            "Assessment Type": assessment_type,
-            "Course Outcome": co,
-            "Allocated Marks": marks
-        })
-
-    difference = round(
-        assessment_total - maximum_marks,
-        2
-    )
-
-    if abs(difference) < 0.001:
-
-        st.success(
-            f"Allocated: {assessment_total:g} / "
-            f"{maximum_marks:g}"
-        )
+        for error in errors:
+            st.error(error)
 
     else:
 
-        valid_allocation = False
+        # ------------------------------------------
+        # FINAL MATRIX
+        # ------------------------------------------
 
-        st.error(
-            f"Allocated: {assessment_total:g} / "
-            f"{maximum_marks:g} | "
-            f"Difference: {difference:g}"
+        st.markdown(
+            '<div class="section-heading">'
+            'Final CO Assessment Summary Matrix'
+            '</div>',
+            unsafe_allow_html=True
         )
 
-    st.divider()
+        matrix_df, final_total_row = build_matrix()
 
-
-# =========================================================
-# FINAL CO ASSESSMENT ALLOCATION MATRIX
-# =========================================================
-
-st.markdown(
-    '<div class="section-title">'
-    'Final CO Assessment Allocation Matrix'
-    '</div>',
-    unsafe_allow_html=True
-)
-
-allocation_df = pd.DataFrame(allocation_data)
-
-matrix_df = allocation_df.pivot(
-    index=["Assessment", "Assessment Type"],
-    columns="Course Outcome",
-    values="Allocated Marks"
-).reset_index()
-
-matrix_df.columns.name = None
-
-matrix_df = matrix_df[
-    ["Assessment", "Assessment Type"] + CO_LIST
-]
-
-# Add total maximum marks
-maximum_lookup = {
-    item["Assessment"]: item["Maximum Marks"]
-    for item in assessments
-}
-
-matrix_df["Total Maximum Marks"] = (
-    matrix_df["Assessment"].map(maximum_lookup)
-)
-
-matrix_df["Total Allocated Marks"] = (
-    matrix_df[CO_LIST].sum(axis=1)
-)
-
-# Display only the final matrix
-st.dataframe(
-    matrix_df,
-    use_container_width=True,
-    hide_index=True
-)
-
-
-# =========================================================
-# VALIDATION
-# =========================================================
-
-if valid_allocation:
-
-    st.success(
-        "All assessment allocations match their maximum marks."
-    )
-
-else:
-
-    st.warning(
-        "Please correct the allocation values before downloading."
-    )
-
-
-# =========================================================
-# EXCEL REPORT
-# =========================================================
-
-def create_excel_report():
-
-    output = BytesIO()
-
-    with pd.ExcelWriter(
-        output,
-        engine="openpyxl"
-    ) as writer:
-
-        matrix_df.to_excel(
-            writer,
-            sheet_name="CO Allocation Matrix",
-            index=False
+        st.dataframe(
+            matrix_df,
+            use_container_width=True,
+            hide_index=True
         )
 
-        ws = writer.book["CO Allocation Matrix"]
+        # ------------------------------------------
+        # SUMMARY METRICS
+        # ------------------------------------------
 
-        header_fill = PatternFill(
-            "solid",
-            fgColor="174D36"
-        )
+        metric1, metric2, metric3 = st.columns(3)
 
-        header_font = Font(
-            bold=True,
-            color="FFFFFF"
-        )
-
-        thin_border = Border(
-            bottom=Side(
-                style="thin",
-                color="D6D6D6"
-            )
-        )
-
-        ws.freeze_panes = "A2"
-        ws.auto_filter.ref = ws.dimensions
-
-        for cell in ws[1]:
-
-            cell.fill = header_fill
-            cell.font = header_font
-
-            cell.alignment = Alignment(
-                horizontal="center",
-                vertical="center",
-                wrap_text=True
+        with metric1:
+            st.metric(
+                "Total Assessment Weight",
+                f"{final_total_row['Assessment Weight']:.2f}"
             )
 
-        for row in ws.iter_rows(min_row=2):
+        with metric2:
+            st.metric(
+                "Total CO Allocation",
+                f"{final_total_row['TOTAL']:.2f}"
+            )
 
-            for cell in row:
+        with metric3:
+            st.metric(
+                "Number of Course Outcomes",
+                len(co_list)
+            )
 
-                cell.border = thin_border
+        # ------------------------------------------
+        # EXCEL EXPORT
+        # ------------------------------------------
 
-                cell.alignment = Alignment(
-                    horizontal="center",
-                    vertical="center",
-                    wrap_text=True
+        output = BytesIO()
+
+        course_details_df = pd.DataFrame({
+            "Department": [department],
+            "Program Type": [program_type],
+            "Program": [program],
+            "Program Code": [course_code],
+            "Number of COs": [number_of_cos]
+        })
+
+        fixed_weights_df = pd.DataFrame({
+            "Course Outcome": co_list,
+            "Fixed CO Weightage": [
+                fixed_co_weights[co] for co in co_list
+            ]
+        })
+
+        co_total_df = pd.DataFrame({
+            "Course Outcome": co_list,
+            "Fixed CO Weightage": [
+                fixed_co_weights[co] for co in co_list
+            ],
+            "Total Assessment Allocation": [
+                round(final_total_row[co], 2) for co in co_list
+            ]
+        })
+
+        with pd.ExcelWriter(
+            output,
+            engine="openpyxl"
+        ) as writer:
+
+            # Main summary matrix
+            matrix_df.to_excel(
+                writer,
+                sheet_name="CO Assessment Matrix",
+                index=False
+            )
+
+            # Fixed CO weightages
+            fixed_weights_df.to_excel(
+                writer,
+                sheet_name="CO Weightages",
+                index=False
+            )
+
+            # Individual assessment weightage sheets
+            for assessment in ASSESSMENTS:
+
+                details = current_assessment_data[assessment]
+
+                selected = details["selected_cos"]
+
+                weightage_df = pd.DataFrame({
+                    "Course Outcome": selected,
+                    "Fixed CO Weightage": [
+                        fixed_co_weights[co] for co in selected
+                    ],
+                    "Assessment CO Weightage": [
+                        details["weights"][co] for co in selected
+                    ],
+                    "Marks (Conducted Scale)": [
+                        round(raw_allocations[assessment][co], 2)
+                        for co in selected
+                    ],
+                    "Converted Weight": [
+                        round(allocations[assessment][co], 2)
+                        for co in selected
+                    ]
+                })
+
+                weightage_df.to_excel(
+                    writer,
+                    sheet_name=f"{assessment} CO Weightage",
+                    index=False
                 )
 
-        for column_cells in ws.columns:
-
-            max_length = max(
-                (
-                    len(str(cell.value))
-                    for cell in column_cells
-                    if cell.value is not None
-                ),
-                default=10
+            # Course details
+            course_details_df.to_excel(
+                writer,
+                sheet_name="Course Details",
+                index=False
             )
 
-            letter = get_column_letter(
-                column_cells[0].column
+            # CO-wise totals
+            co_total_df.to_excel(
+                writer,
+                sheet_name="CO-wise Total",
+                index=False
             )
 
-            ws.column_dimensions[letter].width = min(
-                max_length + 4,
-                40
-            )
+            # Excel formatting
+            for worksheet in writer.book.worksheets:
 
-        ws.row_dimensions[1].height = 30
+                worksheet.freeze_panes = "A2"
 
-    output.seek(0)
+                for cell in worksheet[1]:
 
-    return output
+                    cell.font = Font(
+                        bold=True,
+                        color="FFFFFF"
+                    )
 
+                    cell.fill = PatternFill(
+                        fill_type="solid",
+                        fgColor="183D32"
+                    )
 
-# =========================================================
-# DOWNLOAD MATRIX
-# =========================================================
+                    cell.alignment = Alignment(
+                        horizontal="center",
+                        vertical="center"
+                    )
 
-st.divider()
+                worksheet.row_dimensions[1].height = 25
 
-if valid_allocation:
+                for column_cells in worksheet.columns:
 
-    report = create_excel_report()
+                    max_length = max(
+                        (
+                            len(str(cell.value))
+                            for cell in column_cells
+                            if cell.value is not None
+                        ),
+                        default=0
+                    )
 
-    st.download_button(
-        label="Download CO Allocation Matrix",
-        data=report,
-        file_name=f"CO_Allocation_{course_code}.xlsx",
-        mime=(
-            "application/vnd.openxmlformats-officedocument."
-            "spreadsheetml.sheet"
-        ),
-        use_container_width=True
-    )
+                    worksheet.column_dimensions[
+                        column_cells[0].column_letter
+                    ].width = min(max_length + 4, 40)
 
-else:
+        output.seek(0)
 
-    st.button(
-        "Download CO Allocation Matrix",
-        disabled=True,
-        use_container_width=True
-    )
+        # ------------------------------------------
+        # DOWNLOAD BUTTON
+        # ------------------------------------------
 
+        st.markdown(
+            '<div class="section-heading">Download Results</div>',
+            unsafe_allow_html=True
+        )
 
-# =========================================================
-# RESET
-# =========================================================
-
-if st.button("Reset Dashboard"):
-
-    st.cache_data.clear()
-    st.session_state.clear()
-    st.rerun()
+        st.download_button(
+            label="Download Excel Report",
+            data=output,
+            file_name="CO_Weightage_Allocation.xlsx",
+            mime=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+            use_container_width=True
+        )
