@@ -19,6 +19,10 @@ EXCEL_FILE = Path(__file__).parent / "Course Group.xlsx"
 
 ASSESSMENTS = ["PA1", "PA2", "LE1", "LE2"]
 
+# Only written exams are conducted for some marks and then converted.
+# LE (attendance, etc.) is not an exam, so it has a single marks field.
+EXAM_ASSESSMENTS = ["PA1", "PA2"]
+
 
 # ==================================================
 # CUSTOM CSS - FOREST GREEN + CHAMPAGNE
@@ -466,32 +470,48 @@ def assessment_input(assessment):
             unsafe_allow_html=True
         )
 
-        in_col1, in_col2 = st.columns(2)
+        if assessment in EXAM_ASSESSMENTS:
 
-        with in_col1:
-            conducted_marks = st.number_input(
-                f"{assessment} Exam Conducted For (Marks)",
-                min_value=0.0,
-                value=0.0,
-                step=0.5,
-                key=f"{assessment}_conducted_marks"
-            )
+            in_col1, in_col2 = st.columns(2)
 
-        with in_col2:
+            with in_col1:
+                conducted_marks = st.number_input(
+                    f"{assessment} Exam Conducted For (Marks)",
+                    min_value=0.0,
+                    value=0.0,
+                    step=0.5,
+                    key=f"{assessment}_conducted_marks"
+                )
+
+            with in_col2:
+                total_weight = st.number_input(
+                    f"{assessment} Convert To (Marks)",
+                    min_value=0.0,
+                    value=0.0,
+                    step=0.5,
+                    key=f"{assessment}_total_weight"
+                )
+
+            if conducted_marks > 0 and total_weight > 0:
+                st.caption(
+                    f"{conducted_marks:g} marks converted to "
+                    f"{total_weight:g} marks "
+                    f"(factor = {total_weight:g} / {conducted_marks:g} "
+                    f"= {total_weight / conducted_marks:.3f})"
+                )
+
+        else:
+
+            # No exam and no conversion (e.g. attendance): one marks field.
             total_weight = st.number_input(
-                f"{assessment} Convert To (Marks)",
+                f"{assessment} Total Marks",
                 min_value=0.0,
                 value=0.0,
                 step=0.5,
                 key=f"{assessment}_total_weight"
             )
 
-        if conducted_marks > 0 and total_weight > 0:
-            st.caption(
-                f"{conducted_marks:g} marks converted to {total_weight:g} marks "
-                f"(factor = {total_weight:g} / {conducted_marks:g} "
-                f"= {total_weight / conducted_marks:.3f})"
-            )
+            conducted_marks = total_weight   # factor = 1
 
         st.write("*Select Course Outcomes:*")
 
@@ -740,8 +760,7 @@ def build_matrix():
 
         row = {
             "Assessment": assessment,
-            "Conducted Marks": details["conducted_marks"],
-            "Converted Marks": details["total_weight"]
+            "Assessment Marks": details["total_weight"]
         }
 
         for co in co_list:
@@ -753,11 +772,7 @@ def build_matrix():
 
     total_row = {
         "Assessment": "TOTAL",
-        "Conducted Marks": sum(
-            current_assessment_data[a]["conducted_marks"]
-            for a in ASSESSMENTS
-        ),
-        "Converted Marks": sum(
+        "Assessment Marks": sum(
             current_assessment_data[a]["total_weight"]
             for a in ASSESSMENTS
         )
@@ -773,7 +788,7 @@ def build_matrix():
     df = pd.DataFrame(rows)
 
     numeric_cols = (
-        ["Conducted Marks", "Converted Marks"] + co_list + ["TOTAL"]
+        ["Assessment Marks"] + co_list + ["TOTAL"]
     )
 
     df[numeric_cols] = df[numeric_cols].round(2)
@@ -813,7 +828,7 @@ if calculate_button:
             "The sum of fixed CO weightages must be greater than zero."
         )
 
-    for a in ASSESSMENTS:
+    for a in EXAM_ASSESSMENTS:
 
         d = current_assessment_data[a]
 
@@ -861,8 +876,8 @@ if calculate_button:
 
         with metric1:
             st.metric(
-                "Total Converted Marks",
-                f"{final_total_row['Converted Marks']:.2f}"
+                "Total Assessment Marks",
+                f"{final_total_row['Assessment Marks']:.2f}"
             )
 
         with metric2:
