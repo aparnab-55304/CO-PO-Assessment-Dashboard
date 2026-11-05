@@ -148,47 +148,31 @@ st.markdown("""
 # LOAD COURSE DETAILS
 # ==================================================
 
+def _clean(value):
+    """Normalise a cell: remove NBSP/newlines, collapse spaces, lowercase."""
+    return " ".join(
+        str(value).replace("\u00a0", " ").replace("\n", " ").split()
+    ).strip().lower()
+
+
+def _classify(cell_text):
+    """Map a header cell to one of the four required column names."""
+    c = cell_text
+    if not c or c == "nan":
+        return None
+    if "depart" in c:
+        return "Department"
+    if "type" in c:
+        return "Program Type"
+    if "code" in c:
+        return "Program Code"
+    if c.startswith("program") or "course" in c:
+        return "Program"
+    return None
+
+
 @st.cache_data
 def load_course_data():
-
-    raw = pd.read_excel(EXCEL_FILE, header=None)
-
-    header_row = None
-
-    for i in range(min(15, len(raw))):
-
-        headings = [
-            " ".join(
-                str(value).replace("\u00a0", " ").split()
-            ).strip().lower()
-            for value in raw.iloc[i]
-        ]
-
-        if (
-            ("department" in headings or "departmen" in headings)
-            and "program type" in headings
-            and "program" in headings
-        ):
-            header_row = i
-            break
-
-    if header_row is None:
-        raise ValueError(
-            "Could not identify the Excel header row."
-        )
-
-    df = pd.read_excel(EXCEL_FILE, header=header_row)
-
-    df.columns = [
-        " ".join(
-            str(col).replace("\u00a0", " ").replace("\n", " ").split()
-        ).strip()
-        for col in df.columns
-    ]
-
-    # Accept the occasional missing final letter in Department.
-    if "Department" not in df.columns and "Departmen" in df.columns:
-        df.rename(columns={"Departmen": "Department"}, inplace=True)
 
     required_columns = [
         "Department",
@@ -197,27 +181,69 @@ def load_course_data():
         "Program Code"
     ]
 
-    missing = [
-        col for col in required_columns
-        if col not in df.columns
-    ]
+    workbook = pd.ExcelFile(EXCEL_FILE)
 
-    if missing:
-        raise ValueError(
-            "Missing Excel columns: " + ", ".join(missing)
-        )
+    preview = []
 
-    df = df[required_columns].copy()
+    for sheet in workbook.sheet_names:
 
-    for col in required_columns:
-        df[col] = df[col].astype("string").str.strip()
+        raw = pd.read_excel(workbook, sheet_name=sheet, header=None)
 
-    df = df.dropna(subset=required_columns)
+        # Search the first 60 rows so title/blank rows above the
+        # table are skipped automatically.
+        for i in range(min(60, len(raw))):
 
-    for col in required_columns:
-        df = df[df[col] != ""]
+            column_positions = {}
 
-    return df.drop_duplicates().reset_index(drop=True)
+            for position, value in enumerate(raw.iloc[i]):
+
+                name = _classify(_clean(value))
+
+                if name and name not in column_positions:
+                    column_positions[name] = position
+
+            if all(col in column_positions for col in required_columns):
+
+                data = raw.iloc[i + 1:].copy()
+
+                df = pd.DataFrame({
+                    col: data.iloc[:, column_positions[col]].values
+                    for col in required_columns
+                })
+
+                # Merged cells leave blanks below the first value.
+                df["Department"] = df["Department"].ffill()
+                df["Program Type"] = df["Program Type"].ffill()
+
+                for col in required_columns:
+                    df[col] = (
+                        df[col].astype("string")
+                        .str.replace("\u00a0", " ", regex=False)
+                        .str.strip()
+                    )
+
+                df = df.dropna(subset=required_columns)
+
+                for col in required_columns:
+                    df = df[(df[col] != "") & (df[col].str.lower() != "nan")]
+
+                if len(df) > 0:
+                    return df.drop_duplicates().reset_index(drop=True)
+
+        # Keep a short preview of this sheet for the error message.
+        for i in range(min(8, len(raw))):
+            cells = [
+                str(v) for v in raw.iloc[i].tolist()
+                if str(v) != "nan"
+            ]
+            if cells:
+                preview.append(f"[{sheet}] row {i + 1}: " + " | ".join(cells))
+
+    raise ValueError(
+        "Could not find a header row containing Department, Program Type, "
+        "Program and Program Code. First rows found: "
+        + " || ".join(preview[:10])
+    )
 
 
 try:
