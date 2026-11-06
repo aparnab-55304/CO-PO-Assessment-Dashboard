@@ -14,8 +14,9 @@ st.set_page_config(
     layout="wide"
 )
 
-EXCEL_FILE = Path(_file_).parent / "Course Group.xlsx"
+from pathlib import Path
 
+EXCEL_FILE = Path(__file__).parent / "Course Group.xlsx"
 # The final matrix grand total is based on the sum of entered assessment weights.
 
 
