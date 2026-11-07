@@ -1,103 +1,49 @@
 import requests
 import streamlit as st
 import pandas as pd
-from openpyxl.styles import Font, PatternFill, Alignment, Border,Side
+from openpyxl.styles import Font, PatternFill, Alignment, Border
 from openpyxl.utils import get_column_letter
 from io import BytesIO
 from pathlib import Path
-from openpyxl import Workbook
-import requests
-import streamlit as st
 
 
+def upload_to_google_sheets(department, program, course_code, result_df):
 
-def upload_to_google_sheets(
-    result_df,
-    course_code,
-    department,
-    course_name,
-    semester,
-    book1_rows
-):
     try:
-        url = st.secrets["APPS_SCRIPT_URL"]
-        secret = st.secrets["APP_SECRET"]
+        url = st.secrets["apps_script_url"]
 
-        # -----------------------------------
-        # CHECK ALLOCATION DATA
-        # -----------------------------------
+        all_rows = [
+            [department],
+            [program],
+            [],
+            ["Course Code"] + result_df.columns.tolist()
+        ]
 
-        if result_df is None or result_df.empty:
-            return False, "Allocation DataFrame is empty. Calculate Allocation first."
+        for _, row in result_df.iterrows():
 
-        allocation_rows = []
+            assessment = row["Assessment"]
 
-        co_columns = ["CO1", "CO2", "CO3", "CO4", "CO5"]
+            selected_course_code = (
+                "" if assessment == "TOTAL" else course_code
+            )
 
-        for index, row in result_df.iterrows():
+            values = [selected_course_code, assessment]
 
-            # Assessment name can be a column or the DataFrame index
-            if "Assessment" in result_df.columns:
-                assessment = row["Assessment"]
-            else:
-                assessment = index
+            for col in result_df.columns:
+                if col != "Assessment":
+                    values.append(round(float(row[col]), 2))
 
-            allocation_values = []
+            all_rows.append(values)
 
-            for co in co_columns:
-                value = row.get(co, 0)
-
-                if pd.isna(value):
-                    value = 0
-
-                allocation_values.append(float(value))
-
-            total = row.get("TOTAL", 0)
-
-            if pd.isna(total):
-                total = 0
-
-            allocation_rows.append([
-                str(course_code).strip().upper(),
-                str(department),
-                str(course_name),
-                str(semester),
-                str(assessment),
-                *allocation_values,
-                float(total)
-            ])
-
-        # -----------------------------------
-        # VALIDATE GENERATED DATA
-        # -----------------------------------
-
-        if not allocation_rows:
-            return False, "No allocation rows were generated."
-
-        if not isinstance(book1_rows, list) or not book1_rows:
-            return False, "Book1 assessment data is missing."
-
-        # -----------------------------------
-        # PREPARE PAYLOAD
-        # -----------------------------------
-
-        payload = {
-            "token": secret,
-            "course_code": str(course_code).strip().upper(),
-            "department": str(department),
-            "course_name": str(course_name),
-            "semester": str(semester),
-            "allocation_rows": allocation_rows,
-            "book1_rows": book1_rows
-        }
-
-        # -----------------------------------
-        # SEND TO GOOGLE SHEETS
-        # -----------------------------------
+        sheet_name = str(course_code).strip()
 
         response = requests.post(
             url,
-            json=payload,
+            json={
+                "department": str(department).strip(),
+                "sheetName": sheet_name,
+                "values": all_rows
+            },
             timeout=30
         )
 
@@ -106,15 +52,44 @@ def upload_to_google_sheets(
         result = response.json()
 
         if result.get("status") == "success":
-            return True, result
-
-        return False, result.get(
-            "message",
-            "Google Sheets upload failed."
-        )
+            st.success("Course saved successfully!")
+        else:
+            st.error(
+                f"Google Sheets error: {result.get('message')}"
+            )
 
     except Exception as e:
-        return False, str(e)
+        st.error(f"Google Sheets upload failed: {e}")
+
+        
+        
+def get_department_courses_from_google_sheets(department):
+
+    try:
+        url = st.secrets["apps_script_url"]
+
+        response = requests.get(
+            url,
+            params={"department": str(department).strip()},
+            timeout=30
+        )
+
+        response.raise_for_status()
+
+        result = response.json()
+
+        if result.get("status") == "success":
+            return result.get("courses", [])
+
+        st.error(
+            f"Could not retrieve courses: {result.get('message')}"
+        )
+        return []
+
+    except Exception as e:
+        st.error(f"Could not retrieve saved courses: {e}")
+        return []
+
 
 # ==================================================
 # PAGE CONFIGURATION
@@ -126,7 +101,7 @@ st.set_page_config(
     layout="wide"
 )
 
-EXCEL_FILE = Path(__file__).parent / "Course Group.xlsx"
+EXCEL_FILE = Path(_file_).parent / "Course Group.xlsx"
 
 # The final matrix grand total is based on the sum of entered assessment weights.
 
@@ -859,26 +834,10 @@ for assessment, entered_total, selected_cos, assessment_co_weights in all_assess
     for co in co_list:
         row[co] = float(assessment_co_weights.get(co, 0.0))
 
-    row["TOTAL"] = sum(row[co] for co in co_list)
     editable_rows.append(row)
 
-editable_total_row = {
-    "Assessment": "TOTAL",
-    "Entered Assessment Weight": sum(
-        item[1] for item in all_assessments
-    )
-}
-
-for co in co_list:
-    editable_total_row[co] = sum(
-        row[co] for row in editable_rows
-    )
-
-editable_total_row["TOTAL"] = sum(
-    editable_total_row[co] for co in co_list
-)
-
-editable_live_df = pd.DataFrame(editable_rows + [editable_total_row])
+# Create the editable table without TOTAL row or TOTAL column
+editable_live_df = pd.DataFrame(editable_rows)
 
 column_config = {
     "Assessment": st.column_config.TextColumn(
@@ -887,11 +846,6 @@ column_config = {
     ),
     "Entered Assessment Weight": st.column_config.NumberColumn(
         "Entered Assessment Weight",
-        disabled=True,
-        format="%.2f"
-    ),
-    "TOTAL": st.column_config.NumberColumn(
-        "TOTAL",
         disabled=True,
         format="%.2f"
     )
@@ -904,22 +858,17 @@ for co in co_list:
         step=0.5,
         format="%.2f"
     )
-
 st.data_editor(
     editable_live_df,
     use_container_width=True,
     hide_index=True,
     num_rows="fixed",
-    disabled=["Assessment", "Entered Assessment Weight", "TOTAL"],
+    disabled=["Assessment", "Entered Assessment Weight"],
     column_config=column_config,
     key=editor_key,
     on_change=sync_table_edits_to_assessment_inputs,
     args=(editor_key, co_list)
 )
-
-
-
-
 
 
 # ==================================================
@@ -934,14 +883,16 @@ calculate_button = st.button(
 )
 
 
+# ==================================================
+# FINAL MATRIX AND EXCEL EXPORT
+# ==================================================
+
 if calculate_button:
 
     errors = []
 
-    # ------------------------------------------
-    # VALIDATION
-    # ------------------------------------------
-
+    # Validate all four assessments because each requires
+    # individually selected COs and assigned CO weights.
     for name, total_weight, selected_cos, assessment_co_weights in all_assessments:
 
         assigned_total = sum(
@@ -969,63 +920,21 @@ if calculate_button:
     else:
 
         # ------------------------------------------
-        # COURSE DETAILS
+        # BUILD FINAL MATRIX
         # ------------------------------------------
-
-        course_code_str = str(course_code).strip()
-        course_code_key = course_code_str.upper()
-
-        try:
-            semester_number = int(course_code_str[-2:])
-
-            if not 1 <= semester_number <= 8:
-                raise ValueError
-
-            semester = f"Semester {semester_number}"
-
-        except (ValueError, TypeError):
-            st.error(
-                "Could not identify semester from course code. "
-                "The last two digits must represent semester 01 to 08."
-            )
-            st.stop()
-
-        # ------------------------------------------
-        # BUILD ALLOCATION MATRIX
-        # ------------------------------------------
-
-        assessment_names = ["PA1", "PA2", "LE1", "LM"]
-
-        display_names = {
-            "PA1": "PA1",
-            "PA2": "PA2",
-            "LE1": "LE",
-            "LM": "LM"
-        }
-
-        co_names = ["CO1", "CO2", "CO3", "CO4", "CO5"]
 
         matrix_rows = []
 
-        for assessment in assessment_names:
+        for name in ["PA1", "PA2", "LE1", "LM"]:
 
-            row = {
-                "Assessment": display_names[assessment]
-            }
+            row = {"Assessment": name}
 
-            for co in co_names:
-                if (
-                    assessment in allocation_matrix.index
-                    and co in allocation_matrix.columns
-                ):
-                    row[co] = float(
-                        allocation_matrix.loc[assessment, co]
-                    )
-                else:
-                    row[co] = 0.0
+            for co in co_list:
+                row[co] = allocation_matrix.loc[name, co]
 
             row["TOTAL"] = sum(
-                row[co] for co in co_names
+                allocation_matrix.loc[name, co]
+                for co in co_list
             )
 
             matrix_rows.append(row)
@@ -1036,22 +945,21 @@ if calculate_button:
 
         total_row = {"Assessment": "TOTAL"}
 
-        for co in co_names:
-            total_row[co] = sum(
-                row[co] for row in matrix_rows
-            )
+        for co in co_list:
+            total_row[co] = allocation_matrix[co].sum()
 
         total_row["TOTAL"] = sum(
-            total_row[co] for co in co_names
+            total_row[co] for co in co_list
         )
 
         matrix_rows.append(total_row)
 
         result_df = pd.DataFrame(matrix_rows)
+        
 
-        # ==========================================
-        # DISPLAY ALLOCATION MATRIX
-        # ==========================================
+        # ------------------------------------------
+        # DISPLAY FINAL MATRIX
+        # ------------------------------------------
 
         st.markdown("---")
 
@@ -1068,267 +976,296 @@ if calculate_button:
             hide_index=True
         )
 
-        # ==========================================
+        # ------------------------------------------
         # SUMMARY METRICS
-        # ==========================================
+        # ------------------------------------------
 
         metric1, metric2, metric3 = st.columns(3)
 
         with metric1:
+
             st.metric(
-                "Total Assessment Allocation",
+                "Total CCA",
                 f"{total_row['TOTAL']:.2f}"
             )
 
         with metric2:
+
             st.metric(
-                "Total Fixed CO Weightage",
+                "Total Marks for ESE",
                 f"{fixed_co_weightage_total:.2f}"
             )
 
         with metric3:
+
             st.metric(
                 "Number of Course Outcomes",
                 len(co_list)
             )
-
-        # ==========================================
-        # BUILD BOOK1 FORMAT FOR MAIN HEAD
-        # ==========================================
-
-        book1_rows = []
-
-        # First header
-        book1_rows.append([
-            "COURSE CODE",
-            "",
-            "CO1",
-            "CO2",
-            "CO3",
-            "CO4",
-            "CO5"
-        ])
-
-        # First block
-        for assessment in assessment_names:
-
-            row = [
-                "",
-                display_names[assessment]
-            ]
-
-            for co in co_names:
-                if (
-                    assessment in allocation_matrix.index
-                    and co in allocation_matrix.columns
-                ):
-                    value = allocation_matrix.loc[assessment, co]
-                else:
-                    value = 0
-
-                row.append(round(float(value), 2))
-
-            book1_rows.append(row)
-
-        # Second block
-        for assessment in assessment_names:
-
-            row = [
-                course_code_str if assessment == "PA1" else "",
-                display_names[assessment]
-            ]
-
-            for co in co_names:
-                if (
-                    assessment in allocation_matrix.index
-                    and co in allocation_matrix.columns
-                ):
-                    value = allocation_matrix.loc[assessment, co]
-                else:
-                    value = 0
-
-                row.append(round(float(value), 2))
-
-            book1_rows.append(row)
-
-        # ==========================================
-        # EXCEL DOWNLOAD - TEACHER VERSION
-        # CURRENT COURSE ONLY
-        # ==========================================
-
-        output = BytesIO()
-
-        workbook = Workbook()
-
-        ws = workbook.active
-        ws.title = "Current Course"
-
-        ws.append([
-            "Course Code",
-            course_code_str
-        ])
-
-        ws.append([
-            "Department",
-            department
-        ])
-
-        ws.append([
-            "Course Name",
-            program
-        ])
-
-        ws.append([
-            "Semester",
-            semester
-        ])
-
-        ws.append([])
-
-        ws.append([
-            "Assessment",
-            "CO1",
-            "CO2",
-            "CO3",
-            "CO4",
-            "CO5",
-            "TOTAL"
-        ])
-
-        for _, row in result_df.iterrows():
-
-            ws.append([
-                row["Assessment"],
-                *[
-                    round(float(row.get(co, 0)), 2)
-                    for co in co_names
-                ],
-                round(float(row["TOTAL"]), 2)
-            ])
-
+            
         # ------------------------------------------
-        # EXCEL FORMATTING
-        # ------------------------------------------
-
-        header_fill = PatternFill(
-            fill_type="solid",
-            fgColor="26364A"
-        )
-
-        header_font = Font(
-            bold=True,
-            color="FFFFFF"
-        )
-
-        total_fill = PatternFill(
-            fill_type="solid",
-            fgColor="D9EAD3"
-        )
-
-        center = Alignment(
-            horizontal="center",
-            vertical="center"
-        )
-
-        thin_border = Border(
-            left=Side(style="thin"),
-            right=Side(style="thin"),
-            top=Side(style="thin"),
-            bottom=Side(style="thin")
-        )
-
-        for row in ws.iter_rows():
-
-            for cell in row:
-                cell.alignment = center
-                cell.border = thin_border
-
-        for cell in ws[6]:
-            cell.fill = header_fill
-            cell.font = header_font
-
-        for cell in ws[11]:
-            cell.fill = total_fill
-            cell.font = Font(bold=True)
-
-        for column in ws.columns:
-
-            max_length = max(
-                len(str(cell.value))
-                if cell.value is not None else 0
-                for cell in column
-            )
-
-            ws.column_dimensions[
-                column[0].column_letter
-            ].width = max(max_length + 4, 12)
-
-        ws.freeze_panes = "B7"
-
-        workbook.save(output)
-        output.seek(0)
-
-        excel_data = output.getvalue()
-
-        # ==========================================
         # GOOGLE SHEETS UPLOAD
-        # ==========================================
+        # ------------------------------------------
 
-        try:
+        upload_to_google_sheets(
+            department,
+            program,
+            course_code,
+            result_df
+        )
 
-            success, result = upload_to_google_sheets(
-                result_df.round(2),
-                course_code_key,
-                department,
-                program,
-                semester,
-                book1_rows
-            )
+        # ------------------------------------------
+        # RETRIEVE ALL COURSES FOR THIS DEPARTMENT
+        # ------------------------------------------
 
-            if success:
+        saved_courses = get_department_courses_from_google_sheets(
+            department
+        )
 
-                st.success(
-                    f"Course {course_code_str} saved successfully! "
-                    f"Revision: {result.get('revision', 'Updated')}"
-                )
-
-            else:
-
-                st.error(
-                    f"Google Sheets upload failed: {result}"
-                )
-
-        except Exception as e:
+        if not saved_courses:
 
             st.error(
-                f"Google Sheets upload error: {e}"
+                "No saved course data found. "
+                "Please check the Google Sheets connection."
             )
 
-        # ==========================================
-        # DOWNLOAD CURRENT COURSE
-        # ==========================================
+        else:
 
-        safe_course_code = "".join(
-            ch for ch in course_code_str
-            if ch not in '[]:*?/\\'
-        ).strip("'")
+            # ------------------------------------------
+            # EXCEL EXPORT - MULTIPLE COURSE SHEETS
+            # ------------------------------------------
 
-        if not safe_course_code:
-            safe_course_code = "Course"
+            output = BytesIO()
 
-        st.markdown(
-            '<div class="section-heading">Download Results</div>',
-            unsafe_allow_html=True
-        )
+            with pd.ExcelWriter(
+                output,
+                engine="openpyxl"
+            ) as writer:
 
-        st.download_button(
-            label="Download Current Course Excel",
-            data=excel_data,
-            file_name=f"{safe_course_code}_Current_Course.xlsx",
-            mime=(
-                "application/vnd.openxmlformats-officedocument."
-                "spreadsheetml.sheet"
-            ),
-            use_container_width=True,
-            key="download_current_course"
-        )
+                for course in saved_courses:
+
+                    values = course["values"]
+
+                    # --------------------------------------
+# GET COURSE DETAILS
+# --------------------------------------
+
+course_department = str(values[0][0]).replace(
+    "DEPARTMENT:", ""
+).strip()
+
+# Course name comes from the course tab name
+course_program = course["name"]
+
+# --------------------------------------
+# GET MATRIX HEADINGS
+# --------------------------------------
+
+headers = values[3][1:]
+
+# --------------------------------------
+# GET MATRIX VALUES
+# --------------------------------------
+
+data_rows = []
+
+for row in values[4:]:
+
+    if not row or not str(row[1]).strip():
+        continue
+
+    data_rows.append(
+        row[1:len(headers) + 1]
+    )
+                    # --------------------------------------
+                    # CREATE WORKSHEET NAME
+                    # --------------------------------------
+
+                    safe_course_code = "".join(
+                        ch for ch in str(course["name"])
+                        if ch not in '[]:*?/\\'
+                    ).strip("'")
+
+                    sheet_suffix = "-CO Matrix"
+
+                    sheet_name = (
+                        safe_course_code[:31 - len(sheet_suffix)]
+                        + sheet_suffix
+                    )
+
+                    # --------------------------------------
+                    # EXPORT COURSE MATRIX
+                    # --------------------------------------
+
+                    course_df.to_excel(
+                        writer,
+                        sheet_name=sheet_name,
+                        index=False,
+                        startrow=3
+                    )
+
+                    worksheet = writer.sheets[sheet_name]
+
+                    last_column = course_df.shape[1]
+
+                    # --------------------------------------
+                    # FIRST ROW - DEPARTMENT NAME
+                    # --------------------------------------
+
+                    worksheet.merge_cells(
+                        start_row=1,
+                        start_column=1,
+                        end_row=1,
+                        end_column=last_column
+                    )
+
+                    worksheet["A1"] = course_department
+                    worksheet["A1"].border = Border()
+
+                    worksheet["A1"].font = Font(
+                        bold=True,
+                        size=16,
+                        color="FFFFFF"
+                    )
+
+                    worksheet["A1"].fill = PatternFill(
+                        fill_type="solid",
+                        fgColor="26364A"
+                    )
+
+                    worksheet["A1"].alignment = Alignment(
+                        horizontal="center",
+                        vertical="center"
+                    )
+
+                    # --------------------------------------
+                    # SECOND ROW - COURSE NAME
+                    # --------------------------------------
+
+                    worksheet.merge_cells(
+                        start_row=2,
+                        start_column=1,
+                        end_row=2,
+                        end_column=last_column
+                    )
+
+                    worksheet["A2"] = course_program
+                    worksheet["A2"].border = Border()
+
+                    worksheet["A2"].font = Font(
+                        bold=True,
+                        size=13,
+                        color="26364A"
+                    )
+
+                    worksheet["A2"].alignment = Alignment(
+                        horizontal="center",
+                        vertical="center"
+                    )
+
+                    # --------------------------------------
+                    # FOURTH ROW - MATRIX HEADINGS
+                    # --------------------------------------
+
+                    for cell in worksheet[4]:
+
+                        cell.font = Font(
+                            bold=True,
+                            color="FFFFFF"
+                        )
+
+                        cell.fill = PatternFill(
+                            fill_type="solid",
+                            fgColor="26364A"
+                        )
+
+                        cell.alignment = Alignment(
+                            horizontal="center",
+                            vertical="center"
+                        )
+
+                    # --------------------------------------
+                    # MATRIX VALUES
+                    # --------------------------------------
+
+                    for row in worksheet.iter_rows(
+                        min_row=5,
+                        max_row=worksheet.max_row
+                    ):
+
+                        for cell in row:
+
+                            cell.alignment = Alignment(
+                                horizontal="center",
+                                vertical="center"
+                            )
+
+                    # Bold TOTAL row
+                    for cell in worksheet[worksheet.max_row]:
+                        cell.font = Font(bold=True)
+
+                    # --------------------------------------
+                    # COLUMN WIDTHS AND ROW HEIGHTS
+                    # --------------------------------------
+
+                    for col_num in range(
+                        1,
+                        worksheet.max_column + 1
+                    ):
+
+                        max_length = 0
+
+                        for row_num in range(
+                            4,
+                            worksheet.max_row + 1
+                        ):
+
+                            cell_value = worksheet.cell(
+                                row=row_num,
+                                column=col_num
+                            ).value
+
+                            if cell_value is not None:
+
+                                max_length = max(
+                                    max_length,
+                                    len(str(cell_value))
+                                )
+
+                        column_letter = get_column_letter(col_num)
+
+                        worksheet.column_dimensions[
+                            column_letter
+                        ].width = min(max_length + 4, 25)
+
+                    worksheet.row_dimensions[1].height = 28
+                    worksheet.row_dimensions[2].height = 24
+
+                    worksheet.freeze_panes = "B5"
+
+            output.seek(0)
+
+            # --------------------------------------
+            # DOWNLOAD BUTTON
+            # --------------------------------------
+
+            st.markdown(
+                '<div class="section-heading">Download Results</div>',
+                unsafe_allow_html=True
+            )
+
+            safe_department = "".join(
+                ch for ch in str(department)
+                if ch not in '[]:*?/\\'
+            ).strip()
+
+            st.download_button(
+                label="Download Excel Report",
+                data=output,
+                file_name=f"{safe_department}_CO_Assessment_Matrices.xlsx",
+                mime=(
+                    "application/vnd.openxmlformats-officedocument."
+                    "spreadsheetml.sheet"
+                ),
+                use_container_width=True
+            )
