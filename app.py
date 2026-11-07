@@ -1,8 +1,58 @@
+import requests
 import streamlit as st
 import pandas as pd
 from io import BytesIO
 from pathlib import Path
+def upload_to_google_sheets(excel_output):
+    try:
+        url = st.secrets["apps_script_url"]
 
+        excel_output.seek(0)
+        workbook = pd.ExcelFile(excel_output)
+
+        all_rows = []
+
+        for sheet_name in workbook.sheet_names:
+            all_rows.append([f"--- {sheet_name} ---"])
+
+            df = pd.read_excel(
+                workbook,
+                sheet_name=sheet_name,
+                header=None
+            )
+
+            for row in df.itertuples(index=False, name=None):
+                clean_row = []
+
+                for value in row:
+                    if pd.isna(value):
+                        clean_row.append("")
+                    elif hasattr(value, "item"):
+                        clean_row.append(value.item())
+                    else:
+                        clean_row.append(value)
+
+                all_rows.append(clean_row)
+
+            all_rows.append([])
+
+        response = requests.post(
+            url,
+            json={"values": all_rows},
+            timeout=30
+        )
+
+        response.raise_for_status()
+
+        result = response.json()
+
+        if result.get("status") == "success":
+            st.success("Google Sheets updated successfully!")
+        else:
+            st.error(f"Google Sheets error: {result.get('message')}")
+
+    except Exception as e:
+        st.error(f"Google Sheets upload failed: {e}")
 
 # ==================================================
 # PAGE CONFIGURATION
@@ -14,9 +64,8 @@ st.set_page_config(
     layout="wide"
 )
 
-from pathlib import Path
+EXCEL_FILE = Path(_file_).parent / "Course Group.xlsx"
 
-EXCEL_FILE = Path(__file__).parent / "Course Group.xlsx"
 # The final matrix grand total is based on the sum of entered assessment weights.
 
 
@@ -1054,10 +1103,13 @@ if calculate_button:
 
         output.seek(0)
 
-        # ------------------------------------------
-        # DOWNLOAD BUTTON
-        # ------------------------------------------
+        # UPLOAD TO GOOGLE SHEETS
+        upload_to_google_sheets(output)
 
+        # Reset for Excel download
+        output.seek(0)
+
+        # DOWNLOAD BUTTON
         st.markdown(
             '<div class="section-heading">Download Results</div>',
             unsafe_allow_html=True
