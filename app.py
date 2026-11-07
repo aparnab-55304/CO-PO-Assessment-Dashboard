@@ -4,10 +4,12 @@ import pandas as pd
 from openpyxl.styles import Font, PatternFill, Alignment, Border
 from openpyxl.utils import get_column_letter
 from io import BytesIO
+APPS_SCRIPT_URL =https://script.google.com/macros/s/AKfycbwpDFtOmq7ofgryMbABdWiV8_GBI_DvboGTtYEfb9UdbMrL6WBcqRUOLUugSn-c-KZQ5Q/exec
+APP_SECRET = CO-PO Dashboard$123#4567&8
 from pathlib import Path
 def upload_to_google_sheets(excel_output):
     try:
-        url = st.secrets["apps_script_url"]
+        url = st.secrets["https://script.google.com/macros/s/AKfycbwpDFtOmq7ofgryMbABdWiV8_GBI_DvboGTtYEfb9UdbMrL6WBcqRUOLUugSn-c-KZQ5Q/exec"]
 
         excel_output.seek(0)
         workbook = pd.ExcelFile(excel_output)
