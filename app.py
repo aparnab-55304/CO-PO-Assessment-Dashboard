@@ -862,6 +862,7 @@ st.data_editor(
 
 
 
+
 # ==================================================
 # CALCULATE ALLOCATION BUTTON
 # ==================================================
@@ -1057,7 +1058,6 @@ if calculate_button:
             for row in ws.iter_rows():
 
                 for cell in row:
-
                     cell.alignment = center
                     cell.border = thin_border
 
@@ -1079,6 +1079,23 @@ if calculate_button:
                     column[0].column_letter
                 ].width = max(max_length + 4, 12)
 
+        # ------------------------------------------
+        # SAFE CO ALLOCATION LOOKUP
+        # ------------------------------------------
+
+        def get_co_value(assessment, co):
+
+            if (
+                assessment in allocation_matrix.index
+                and co in allocation_matrix.columns
+            ):
+                return round(
+                    float(allocation_matrix.loc[assessment, co]),
+                    2
+                )
+
+            return 0
+
         # ==========================================
         # SHEET 1: COURSE SUMMARY
         # ==========================================
@@ -1099,13 +1116,21 @@ if calculate_button:
         # ------------------------------------------
         # PO SUMMARY DATA
         # ------------------------------------------
+        # po_summary_df was not defined in your
+        # uploaded code. Therefore, use zero values
+        # until the actual PO calculation is connected.
 
-        # po_summary_df must be the DataFrame
-        # containing your calculated PO summary.
-        # It must contain:
-        # Assessment, Weight, CO1, CO2, CO3, CO4, TOTAL.
-
-        po_df = po_summary_df.copy()
+        po_df = pd.DataFrame(
+            columns=[
+                "Assessment",
+                "Weight",
+                "CO1",
+                "CO2",
+                "CO3",
+                "CO4",
+                "TOTAL"
+            ]
+        )
 
         for assessment in ["PO1", "PO2", "LE", "LM"]:
 
@@ -1215,19 +1240,9 @@ if calculate_button:
 
             for co in ["CO1", "CO2", "CO3", "CO4", "CO5"]:
 
-                if (
-                    assessment in allocation_matrix.index
-                    and co in allocation_matrix.columns
-                ):
+                value = get_co_value(assessment, co)
 
-                    value = allocation_matrix.loc[
-                        assessment, co
-                    ]
-
-                else:
-                    value = 0
-
-                row.append(round(float(value), 2))
+                row.append(value)
 
             ws2.append(row)
 
@@ -1239,10 +1254,7 @@ if calculate_button:
             course_code_str,
             "PA1",
             *[
-                round(
-                    float(allocation_matrix.loc["PA1", co]), 2
-                )
-                if co in allocation_matrix.columns else 0
+                get_co_value("PA1", co)
                 for co in ["CO1", "CO2", "CO3", "CO4", "CO5"]
             ]
         ])
@@ -1256,19 +1268,9 @@ if calculate_button:
 
             for co in ["CO1", "CO2", "CO3", "CO4", "CO5"]:
 
-                if (
-                    assessment in allocation_matrix.index
-                    and co in allocation_matrix.columns
-                ):
+                value = get_co_value(assessment, co)
 
-                    value = allocation_matrix.loc[
-                        assessment, co
-                    ]
-
-                else:
-                    value = 0
-
-                row.append(round(float(value), 2))
+                row.append(value)
 
             ws2.append(row)
 
