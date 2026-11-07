@@ -31,7 +31,6 @@ EXCEL_FILE = Path(__file__).parent / "Course Group.xlsx"
 # PASTE YOUR DEPLOYED APPS SCRIPT WEB APP URL HERE
 APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwpDFtOmq7ofgryMbABdWiV8_GBI_DvboGTtYEfb9UdbMrL6WBcqRUOLUugSn-c-KZQ5Q/exec"
 
-
 # ==================================================
 # GOOGLE SHEETS FUNCTIONS
 # ==================================================
