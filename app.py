@@ -976,18 +976,27 @@ if calculate_button:
             )
 
         
+
 # ------------------------------------------
 # EXCEL EXPORT - CO ASSESSMENT MATRIX ONLY
 # ------------------------------------------
 
-# Check final matrix
+# Check whether the final matrix exists
+if "result_df" not in locals() or result_df is None:
+    st.error("Final CO Assessment Matrix was not generated.")
+    st.stop()
+
 if result_df.empty:
     st.error("The CO Assessment Matrix is empty.")
     st.stop()
 
+# Create a clean copy for export
+export_df = result_df.copy().round(2)
+
+# Create Excel output
 output = BytesIO()
 
-# Create worksheet name using course code
+# Create a valid worksheet name
 safe_course_code = "".join(
     ch for ch in str(course_code)
     if ch not in '[]:*?/\\'
@@ -995,18 +1004,24 @@ safe_course_code = "".join(
 
 sheet_suffix = "-CO Matrix"
 
+if not safe_course_code:
+    safe_course_code = "Course"
+
 sheet_name = (
     safe_course_code[:31 - len(sheet_suffix)]
     + sheet_suffix
 )
 
-# Create Excel workbook
+# ------------------------------------------
+# CREATE EXCEL WORKBOOK
+# ------------------------------------------
+
 with pd.ExcelWriter(
     output,
     engine="openpyxl"
 ) as writer:
 
-    result_df.round(2).to_excel(
+    export_df.to_excel(
         writer,
         sheet_name=sheet_name,
         index=False,
@@ -1015,7 +1030,7 @@ with pd.ExcelWriter(
 
     worksheet = writer.sheets[sheet_name]
 
-    last_column = result_df.shape[1]
+    last_column = max(export_df.shape[1], 1)
 
     # FIRST ROW - DEPARTMENT NAME
     worksheet.merge_cells(
@@ -1025,16 +1040,19 @@ with pd.ExcelWriter(
         end_column=last_column
     )
 
-    worksheet["A1"] = department
+    worksheet["A1"] = str(department)
+
     worksheet["A1"].font = Font(
         bold=True,
         size=16,
         color="FFFFFF"
     )
+
     worksheet["A1"].fill = PatternFill(
         fill_type="solid",
         fgColor="26364A"
     )
+
     worksheet["A1"].alignment = Alignment(
         horizontal="center",
         vertical="center"
@@ -1048,12 +1066,14 @@ with pd.ExcelWriter(
         end_column=last_column
     )
 
-    worksheet["A2"] = program
+    worksheet["A2"] = str(program)
+
     worksheet["A2"].font = Font(
         bold=True,
         size=13,
         color="26364A"
     )
+
     worksheet["A2"].alignment = Alignment(
         horizontal="center",
         vertical="center"
@@ -1065,10 +1085,12 @@ with pd.ExcelWriter(
             bold=True,
             color="FFFFFF"
         )
+
         cell.fill = PatternFill(
             fill_type="solid",
             fgColor="26364A"
         )
+
         cell.alignment = Alignment(
             horizontal="center",
             vertical="center"
@@ -1121,30 +1143,37 @@ with pd.ExcelWriter(
     worksheet.row_dimensions[2].height = 24
     worksheet.freeze_panes = "B5"
 
+# Prepare workbook for download
 output.seek(0)
+
+excel_data = output.getvalue()
 
 
 # ------------------------------------------
 # GOOGLE SHEETS UPLOAD
 # ------------------------------------------
 
-success, result = upload_to_google_sheets(
-    result_df.round(2),
-    course_code,
-    department,
-    program,
-    semester
-)
+try:
+    success, result = upload_to_google_sheets(
+        export_df,
+        course_code,
+        department,
+        program,
+        semester
+    )
 
-if success:
-    st.success(
-        f"Course {course_code} saved successfully! "
-        f"Revision: {result['revision']}"
-    )
-else:
-    st.error(
-        f"Google Sheets upload failed: {result}"
-    )
+    if success:
+        st.success(
+            f"Course {course_code} saved successfully! "
+            f"Revision: {result.get('revision', 'Updated')}"
+        )
+    else:
+        st.error(
+            f"Google Sheets upload failed: {result}"
+        )
+
+except Exception as e:
+    st.error(f"Google Sheets upload error: {e}")
 
 
 # ------------------------------------------
@@ -1158,11 +1187,12 @@ st.markdown(
 
 st.download_button(
     label="Download Excel Report",
-    data=output,
-    file_name=f"{course_code}_CO_Assessment_Matrix.xlsx",
+    data=excel_data,
+    file_name=f"{safe_course_code}_CO_Assessment_Matrix.xlsx",
     mime=(
         "application/vnd.openxmlformats-officedocument."
         "spreadsheetml.sheet"
     ),
-    use_container_width=True
+    use_container_width=True,
+    key="download_co_matrix"
 )
