@@ -56,8 +56,8 @@ def upload_to_google_sheets(
 
     try:
 
-        url = st.secrets["https://script.google.com/macros/s/AKfycbwpDFtOmq7ofgryMbABdWiV8_GBI_DvboGTtYEfb9UdbMrL6WBcqRUOLUugSn-c-KZQ5Q/exec"]
-        secret = st.secrets["CO-PO Dashboard$123#4567&8"]
+        url = st.secrets["apps_script_url"]
+        secret = st.secrets["app_secret"]
 
         semester = get_semester_from_course_code(course_code)
 
