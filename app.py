@@ -10,19 +10,30 @@ import requests
 import streamlit as st
 
 
-def upload_to_google_sheets(course_data):
-
+def upload_to_google_sheets(
+    result_df,
+    course_code,
+    department,
+    course_name,
+    semester
+):
     try:
         url = st.secrets["APPS_SCRIPT_URL"]
         secret = st.secrets["APP_SECRET"]
 
+        final_values = (
+            result_df.astype(object)
+            .where(pd.notna(result_df), "")
+            .values.tolist()
+        )
+
         payload = {
             "token": secret,
-            "course_code": course_data["course_code"],
-            "department": course_data["department"],
-            "course_name": course_data["course_name"],
-            "semester": course_data["semester"],
-            "final_values": course_data["final_values"]
+            "course_code": str(course_code).strip().upper(),
+            "department": str(department),
+            "course_name": str(course_name),
+            "semester": str(semester),
+            "final_values": final_values
         }
 
         response = requests.post(
@@ -32,15 +43,20 @@ def upload_to_google_sheets(course_data):
         )
 
         response.raise_for_status()
+
         result = response.json()
 
         if result.get("status") == "success":
             return True, result
 
-        return False, result.get("message", "Upload failed")
+        return False, result.get(
+            "message",
+            "Google Sheets upload failed."
+        )
 
     except Exception as e:
         return False, str(e)
+
 
 # ==================================================
 # PAGE CONFIGURATION
