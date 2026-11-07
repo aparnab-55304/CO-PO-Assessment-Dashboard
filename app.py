@@ -1,7 +1,10 @@
-
+import re
 import requests
 import streamlit as st
 import pandas as pd
+
+from pathlib import Path
+from io import BytesIO
 
 from openpyxl.styles import (
     Font,
@@ -11,12 +14,10 @@ from openpyxl.styles import (
     Side
 )
 from openpyxl.utils import get_column_letter
-from io import BytesIO
-from pathlib import Path
 
 
 # ==================================================
-# PAGE CONFIGURATION
+# CONFIGURATION
 # ==================================================
 
 st.set_page_config(
@@ -27,6 +28,9 @@ st.set_page_config(
 
 EXCEL_FILE = Path(__file__).parent / "Course Group.xlsx"
 
+# PASTE YOUR DEPLOYED APPS SCRIPT WEB APP URL HERE
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwpDFtOmq7ofgryMbABdWiV8_GBI_DvboGTtYEfb9UdbMrL6WBcqRUOLUugSn-c-KZQ5Q/exec"
+
 
 # ==================================================
 # GOOGLE SHEETS FUNCTIONS
@@ -36,10 +40,14 @@ def get_semester_from_course_code(course_code):
 
     code = str(course_code).strip()
 
-    if not code or not code[-1].isdigit():
-        raise ValueError("Unable to identify semester from course code.")
+    match = re.search(r"(\d{3})$", code)
 
-    semester_number = int(code[-1])
+    if not match:
+        raise ValueError(
+            "Unable to identify semester from course code."
+        )
+
+    semester_number = int(match.group(1)[-1])
 
     if semester_number == 0:
         raise ValueError("Invalid semester number in course code.")
@@ -56,50 +64,64 @@ def upload_to_google_sheets(
 
     try:
 
-        url = st.secrets["apps_script_url"]
+        if "PASTE_YOUR_APPS_SCRIPT" in APPS_SCRIPT_URL:
+            raise ValueError(
+                "Please enter your deployed Apps Script URL "
+                "in the APPS_SCRIPT_URL variable."
+            )
+
         secret = st.secrets["app_secret"]
 
         semester = get_semester_from_course_code(course_code)
 
-        allocation_rows = []
+        co_columns = [
+            col for col in result_df.columns
+            if re.fullmatch(r"CO\d+", str(col))
+        ]
+
+        # Department sheet data:
+        # Each row = Course Code, Assessment, COs, TOTAL
+        department_rows = []
 
         for _, row in result_df.iterrows():
 
-            assessment = str(row["Assessment"])
-
-            allocation_row = [
+            values = [
                 str(course_code),
-                str(department),
-                str(program),
-                semester,
-                assessment
+                str(row["Assessment"])
             ]
 
-            for i in range(1, 6):
+            for co in co_columns:
+                values.append(round(float(row[co]), 2))
 
-                co = f"CO{i}"
+            values.append(round(float(row["TOTAL"]), 2))
 
-                allocation_row.append(
-                    round(float(row[co]), 2)
-                    if co in result_df.columns else 0.0
-                )
+            department_rows.append(values)
 
-            allocation_row.append(
-                round(float(row["TOTAL"]), 2)
-                if "TOTAL" in result_df.columns else 0.0
-            )
-
-            allocation_rows.append(allocation_row)
+        # Main Head data:
+        # First row is the table heading.
+        main_head_rows = [
+            [
+                "Course Code",
+                "Assessment",
+                *co_columns,
+                "TOTAL"
+            ]
+        ] + department_rows
 
         response = requests.post(
-            url,
+            APPS_SCRIPT_URL,
             json={
                 "token": secret,
                 "department": str(department).strip(),
                 "course_code": str(course_code).strip(),
                 "course_name": str(program).strip(),
                 "semester": semester,
-                "allocation_rows": allocation_rows
+
+                # Actual assessment rows for department sheet
+                "values": department_rows,
+
+                # Header + assessment rows for Main Head
+                "book1_rows": main_head_rows
             },
             timeout=30
         )
@@ -111,6 +133,7 @@ def upload_to_google_sheets(
         if result.get("status") == "success":
 
             st.success("Course saved successfully!")
+
             return True
 
         st.error(
@@ -119,9 +142,19 @@ def upload_to_google_sheets(
 
         return False
 
+    except KeyError:
+
+        st.error(
+            "Missing app_secret. Add it in Streamlit Cloud "
+            "under Manage app → Settings → Secrets."
+        )
+
+        return False
+
     except Exception as e:
 
         st.error(f"Google Sheets upload failed: {e}")
+
         return False
 
 
@@ -129,14 +162,10 @@ def get_department_courses_from_google_sheets(department):
 
     try:
 
-        url = st.secrets["apps_script_url"]
-        secret = st.secrets["app_secret"]
-
         response = requests.get(
-            url,
+            APPS_SCRIPT_URL,
             params={
-                "department": str(department).strip(),
-                "token": secret
+                "department": str(department).strip()
             },
             timeout=30
         )
@@ -157,7 +186,10 @@ def get_department_courses_from_google_sheets(department):
 
     except Exception as e:
 
-        st.error(f"Could not retrieve saved courses: {e}")
+        st.error(
+            f"Could not retrieve saved courses: {e}"
+        )
+
         return []
 
 
@@ -205,7 +237,6 @@ st.markdown("""
     font-weight: 700 !important;
     margin-top: 8px;
     margin-bottom: 0;
-    opacity: 1 !important;
 }
 
 .section-heading {
@@ -263,7 +294,6 @@ st.markdown("""
     border-radius: 8px;
     font-weight: 700 !important;
     padding: 9px 22px;
-    transition: 0.3s ease;
 }
 
 .stButton > button *,
@@ -276,7 +306,6 @@ st.markdown("""
 .stButton > button:hover,
 .stDownloadButton > button:hover {
     background-color: #52677D !important;
-    color: #FFFFFF !important;
     border-color: #C6A77D !important;
 }
 
@@ -288,25 +317,16 @@ st.markdown("""
     padding: 15px;
 }
 
-[data-testid="stMetricLabel"] {
-    color: #26364A !important;
-    font-weight: 700 !important;
-}
-
+[data-testid="stMetricLabel"],
 [data-testid="stMetricValue"] {
     color: #26364A !important;
-    font-weight: 750 !important;
+    font-weight: 700 !important;
 }
 
 [data-testid="stDataFrame"],
 [data-testid="stDataEditor"] {
     border: 1px solid #E3DDD2;
     border-radius: 8px;
-}
-
-[data-testid="stExpander"] summary {
-    color: #26364A !important;
-    font-weight: 700 !important;
 }
 
 .dashboard-department {
@@ -328,9 +348,11 @@ st.markdown("""
 st.markdown("""
 <div class="dashboard-header">
     <h1>CO Weightage Allocation Dashboard</h1>
+
     <div class="dashboard-subtitle">
         Course Outcome Assessment Weightage Management System
     </div>
+
     <div class="dashboard-department">
         Developed by MIMAMSA | Department of Statistics
     </div>
@@ -349,7 +371,10 @@ def load_course_data():
 
     df.columns = [
         " ".join(
-            str(col).replace("\u00a0", " ").replace("\n", " ").split()
+            str(col)
+            .replace("\u00a0", " ")
+            .replace("\n", " ")
+            .split()
         ).strip()
         for col in df.columns
     ]
@@ -359,7 +384,10 @@ def load_course_data():
         "Departmen": "Department"
     }
 
-    df.rename(columns=department_aliases, inplace=True)
+    df.rename(
+        columns=department_aliases,
+        inplace=True
+    )
 
     required_columns = [
         "Department",
@@ -369,12 +397,15 @@ def load_course_data():
     ]
 
     missing_columns = [
-        col for col in required_columns if col not in df.columns
+        col for col in required_columns
+        if col not in df.columns
     ]
 
     if missing_columns:
+
         raise ValueError(
-            "Missing Excel columns: " + ", ".join(missing_columns)
+            "Missing Excel columns: "
+            + ", ".join(missing_columns)
         )
 
     df = df[required_columns].copy()
@@ -387,7 +418,10 @@ def load_course_data():
     for col in required_columns:
         df = df[df[col] != ""]
 
-    return df.drop_duplicates().reset_index(drop=True)
+    return (
+        df.drop_duplicates()
+        .reset_index(drop=True)
+    )
 
 
 try:
@@ -415,6 +449,7 @@ except PermissionError:
 except Exception as e:
 
     st.error(f"Unable to load course details: {e}")
+
     st.stop()
 
 
@@ -484,14 +519,32 @@ with col4:
     course_codes = matching_courses["Program Code"].unique()
 
     course_code = (
-        course_codes[0] if len(course_codes) > 0 else ""
+        str(course_codes[0])
+        if len(course_codes) > 0
+        else ""
     )
 
     st.text_input(
         "Course Code",
-        value=str(course_code),
+        value=course_code,
         disabled=True
     )
+
+try:
+
+    semester = get_semester_from_course_code(course_code)
+
+except ValueError as e:
+
+    semester = ""
+
+    st.error(str(e))
+
+st.text_input(
+    "Semester",
+    value=semester,
+    disabled=True
+)
 
 
 # ==================================================
@@ -512,7 +565,8 @@ number_of_cos = st.number_input(
 )
 
 co_list = [
-    f"CO{i}" for i in range(1, int(number_of_cos) + 1)
+    f"CO{i}"
+    for i in range(1, int(number_of_cos) + 1)
 ]
 
 
@@ -541,11 +595,13 @@ for i, co in enumerate(co_list):
             key=f"fixed_{co}_weightage"
         )
 
-fixed_co_weightage_total = sum(co_weightages.values())
+fixed_co_weightage_total = sum(
+    co_weightages.values()
+)
 
 
 # ==================================================
-# PA ASSESSMENT INPUT FUNCTION
+# ASSESSMENT INPUT FUNCTION
 # ==================================================
 
 def pa_assessment_input(assessment_name, key_prefix):
@@ -569,7 +625,9 @@ def pa_assessment_input(assessment_name, key_prefix):
             f"*Enter the CO allocation weights for {assessment_name}*"
         )
 
-        checkbox_columns = st.columns(min(len(co_list), 5))
+        checkbox_columns = st.columns(
+            min(len(co_list), 5)
+        )
 
         selected_cos = []
         assessment_co_weights = {}
@@ -588,7 +646,9 @@ def pa_assessment_input(assessment_name, key_prefix):
 
         if selected_cos:
 
-            weight_columns = st.columns(min(len(selected_cos), 4))
+            weight_columns = st.columns(
+                min(len(selected_cos), 4)
+            )
 
             for i, co in enumerate(selected_cos):
 
@@ -606,7 +666,11 @@ def pa_assessment_input(assessment_name, key_prefix):
 
             st.caption("No Course Outcomes selected.")
 
-    return total_weight, selected_cos, assessment_co_weights
+    return (
+        total_weight,
+        selected_cos,
+        assessment_co_weights
+    )
 
 
 # ==================================================
@@ -646,6 +710,7 @@ with assessment_col4:
         pa_assessment_input("LM", "lm")
     )
 
+
 all_assessments = [
     ("PA1", pa1_weight, pa1_selected_cos, pa1_assessment_weights),
     ("PA2", pa2_weight, pa2_selected_cos, pa2_assessment_weights),
@@ -675,13 +740,15 @@ for assessment, total_weight, selected_cos, assessment_co_weights in all_assessm
             float(assessment_co_weights.get(co, 0.0))
         )
 
+
 assessment_total_sum = sum(
     float(total_weight)
     for _, total_weight, _, _ in all_assessments
 )
 
 fixed_co_weightage_total = sum(
-    float(co_weightages[co]) for co in co_list
+    float(co_weightages[co])
+    for co in co_list
 )
 
 allocation_matrix = pd.DataFrame(
@@ -710,7 +777,8 @@ if assessment_total_sum > 0:
 
         column_targets = pd.Series({
             co: (
-                float(co_weightages[co]) / fixed_co_weightage_total
+                float(co_weightages[co]) /
+                fixed_co_weightage_total
             ) * assessment_total_sum
             for co in co_list
         })
@@ -739,10 +807,9 @@ if assessment_total_sum > 0:
                 ):
 
                     balance_error = (
-                        f"{co} has a positive fixed CO weightage, but "
-                        "no assessment has a positive assigned weight "
-                        "for this CO. Select that CO and enter a positive "
-                        "assigned weight in at least one assessment."
+                        f"{co} has a positive fixed CO weightage, "
+                        "but no assessment has a positive assigned "
+                        "weight for this CO."
                     )
 
                     break
@@ -778,7 +845,9 @@ if assessment_total_sum > 0:
                         balanced.loc[assessment, :] = 0.0
 
                     elif current > 0:
-                        balanced.loc[assessment, :] *= target / current
+                        balanced.loc[assessment, :] *= (
+                            target / current
+                        )
 
                 current_columns = balanced.sum(axis=0)
 
@@ -791,7 +860,9 @@ if assessment_total_sum > 0:
                         balanced.loc[:, co] = 0.0
 
                     elif current > 0:
-                        balanced.loc[:, co] *= target / current
+                        balanced.loc[:, co] *= (
+                            target / current
+                        )
 
                 row_difference = (
                     balanced.sum(axis=1) - row_targets
@@ -801,7 +872,10 @@ if assessment_total_sum > 0:
                     balanced.sum(axis=0) - column_targets
                 ).abs().max()
 
-                if max(row_difference, column_difference) < tolerance:
+                if max(
+                    row_difference,
+                    column_difference
+                ) < tolerance:
 
                     converged = True
                     break
@@ -815,9 +889,9 @@ if assessment_total_sum > 0:
                 balance_error = (
                     "The selected CO combinations and assigned weights "
                     "cannot satisfy all row and column totals together. "
-                    "Please review the CO selections and assigned weights "
-                    "for PA1, PA2, LE1 and LM."
+                    "Please review the CO selections and assigned weights."
                 )
+
 
 allocations = {
     assessment: {
@@ -841,9 +915,7 @@ st.markdown(
 
 st.caption(
     "You can edit the CO values directly in this table. "
-    "The corresponding Assigned Weight above will update automatically. "
-    "These are the entered CO weights. The final matrix will match each "
-    "assessment total and each proportionally converted fixed CO total."
+    "The corresponding Assigned Weight above will update automatically."
 )
 
 assessment_prefixes = {
@@ -859,8 +931,15 @@ def sync_table_edits_to_assessment_inputs(
     current_co_list
 ):
 
-    editor_state = st.session_state.get(editor_key, {})
-    edited_rows = editor_state.get("edited_rows", {})
+    editor_state = st.session_state.get(
+        editor_key,
+        {}
+    )
+
+    edited_rows = editor_state.get(
+        "edited_rows",
+        {}
+    )
 
     for row_index, changed_values in edited_rows.items():
 
@@ -872,7 +951,10 @@ def sync_table_edits_to_assessment_inputs(
         if row_index < 0 or row_index >= len(assessment_prefixes):
             continue
 
-        assessment_name = list(assessment_prefixes.keys())[row_index]
+        assessment_name = list(
+            assessment_prefixes.keys()
+        )[row_index]
+
         key_prefix = assessment_prefixes[assessment_name]
 
         for column_name, new_value in changed_values.items():
@@ -881,7 +963,10 @@ def sync_table_edits_to_assessment_inputs(
                 continue
 
             try:
-                new_weight = max(0.0, float(new_value))
+                new_weight = max(
+                    0.0,
+                    float(new_value)
+                )
             except (TypeError, ValueError):
                 new_weight = 0.0
 
@@ -910,9 +995,12 @@ for assessment, entered_total, selected_cos, assessment_co_weights in all_assess
     }
 
     for co in co_list:
-        row[co] = float(assessment_co_weights.get(co, 0.0))
+        row[co] = float(
+            assessment_co_weights.get(co, 0.0)
+        )
 
     editable_rows.append(row)
+
 
 editable_live_df = pd.DataFrame(editable_rows)
 
@@ -921,6 +1009,7 @@ column_config = {
         "Assessment",
         disabled=True
     ),
+
     "Entered Assessment Weight": st.column_config.NumberColumn(
         "Entered Assessment Weight",
         disabled=True,
@@ -937,12 +1026,16 @@ for co in co_list:
         format="%.2f"
     )
 
+
 st.data_editor(
     editable_live_df,
     use_container_width=True,
     hide_index=True,
     num_rows="fixed",
-    disabled=["Assessment", "Entered Assessment Weight"],
+    disabled=[
+        "Assessment",
+        "Entered Assessment Weight"
+    ],
     column_config=column_config,
     key=editor_key,
     on_change=sync_table_edits_to_assessment_inputs,
@@ -979,7 +1072,9 @@ if calculate_button:
 
         if total_weight > 0 and not selected_cos:
 
-            errors.append(f"{name}: Select at least one CO.")
+            errors.append(
+                f"{name}: Select at least one CO."
+            )
 
         elif total_weight > 0 and assigned_total <= 0:
 
@@ -991,6 +1086,12 @@ if calculate_button:
     if balance_error is not None:
         errors.append(balance_error)
 
+    if not course_code:
+        errors.append("Course code is missing.")
+
+    if not semester:
+        errors.append("Unable to identify the semester.")
+
     if errors:
 
         for error in errors:
@@ -998,16 +1099,22 @@ if calculate_button:
 
     else:
 
+        # ------------------------------------------
         # BUILD FINAL MATRIX
+        # ------------------------------------------
 
         matrix_rows = []
 
         for name in assessment_names:
 
-            row = {"Assessment": name}
+            row = {
+                "Assessment": name
+            }
 
             for co in co_list:
-                row[co] = allocation_matrix.loc[name, co]
+                row[co] = allocation_matrix.loc[
+                    name, co
+                ]
 
             row["TOTAL"] = sum(
                 allocation_matrix.loc[name, co]
@@ -1016,22 +1123,29 @@ if calculate_button:
 
             matrix_rows.append(row)
 
+        # ------------------------------------------
         # TOTAL ROW
+        # ------------------------------------------
 
-        total_row = {"Assessment": "TOTAL"}
+        total_row = {
+            "Assessment": "TOTAL"
+        }
 
         for co in co_list:
             total_row[co] = allocation_matrix[co].sum()
 
         total_row["TOTAL"] = sum(
-            total_row[co] for co in co_list
+            total_row[co]
+            for co in co_list
         )
 
         matrix_rows.append(total_row)
 
         result_df = pd.DataFrame(matrix_rows)
 
+        # ------------------------------------------
         # DISPLAY MATRIX
+        # ------------------------------------------
 
         st.markdown("---")
 
@@ -1048,7 +1162,9 @@ if calculate_button:
             hide_index=True
         )
 
+        # ------------------------------------------
         # SUMMARY METRICS
+        # ------------------------------------------
 
         metric1, metric2, metric3 = st.columns(3)
 
@@ -1073,7 +1189,9 @@ if calculate_button:
                 len(co_list)
             )
 
+        # ------------------------------------------
         # GOOGLE SHEETS UPLOAD
+        # ------------------------------------------
 
         upload_success = upload_to_google_sheets(
             department,
@@ -1082,12 +1200,16 @@ if calculate_button:
             result_df
         )
 
+        # ------------------------------------------
         # RETRIEVE SAVED COURSES
+        # ------------------------------------------
 
         if upload_success:
 
-            saved_courses = get_department_courses_from_google_sheets(
-                department
+            saved_courses = (
+                get_department_courses_from_google_sheets(
+                    department
+                )
             )
 
             if not saved_courses:
@@ -1101,44 +1223,62 @@ if calculate_button:
 
                 output = BytesIO()
 
+                used_sheet_names = set()
+
                 with pd.ExcelWriter(
                     output,
                     engine="openpyxl"
                 ) as writer:
 
-                    used_sheet_names = set()
-
                     for course in saved_courses:
 
                         values = course.get("values", [])
 
-                        if len(values) < 5:
+                        # Apps Script layout:
+                        # Row 1: Course information
+                        # Row 2: Table headings
+                        # Row 3 onwards: Assessment rows
+
+                        if len(values) < 3:
                             continue
 
-                        course_department = str(
+                        course_heading = str(
                             values[0][0]
-                        ).replace("DEPARTMENT:", "").strip()
+                        )
+
+                        course_department = ""
+
+                        if "DEPARTMENT:" in course_heading:
+
+                            course_department = (
+                                course_heading
+                                .split("DEPARTMENT:")[-1]
+                                .split("|")[0]
+                                .strip()
+                            )
 
                         course_program = str(
                             course.get("name", "")
                         )
 
-                        headers = values[3][1:7]
+                        headers = values[1][1:]
 
-                        if len(headers) != 6:
+                        if len(headers) < 3:
                             continue
 
                         data_rows = []
 
-                        for row in values[4:]:
+                        for row in values[2:]:
 
-                            if len(row) < 7:
+                            if len(row) < len(headers) + 1:
                                 continue
 
                             if not str(row[1]).strip():
                                 continue
 
-                            data_rows.append(row[1:7])
+                            data_rows.append(
+                                row[1:len(headers) + 1]
+                            )
 
                         if not data_rows:
                             continue
@@ -1148,14 +1288,19 @@ if calculate_button:
                             columns=headers
                         ).round(2)
 
+                        # ----------------------------------
                         # WORKSHEET NAME
+                        # ----------------------------------
 
                         safe_name = "".join(
                             ch for ch in course_program
                             if ch not in '[]:*?/\\'
                         ).strip("'")
 
-                        original_name = safe_name[:31] or "Course"
+                        original_name = (
+                            safe_name[:31] or "Course"
+                        )
+
                         sheet_name = original_name
                         counter = 1
 
@@ -1164,15 +1309,18 @@ if calculate_button:
                             suffix = f"_{counter}"
 
                             sheet_name = (
-                                original_name[:31 - len(suffix)]
-                                + suffix
+                                original_name[
+                                    :31 - len(suffix)
+                                ] + suffix
                             )
 
                             counter += 1
 
                         used_sheet_names.add(sheet_name)
 
+                        # ----------------------------------
                         # WRITE MATRIX
+                        # ----------------------------------
 
                         course_df.to_excel(
                             writer,
@@ -1182,9 +1330,12 @@ if calculate_button:
                         )
 
                         worksheet = writer.sheets[sheet_name]
+
                         last_column = course_df.shape[1]
 
+                        # ----------------------------------
                         # DEPARTMENT HEADING
+                        # ----------------------------------
 
                         worksheet.merge_cells(
                             start_row=1,
@@ -1213,7 +1364,9 @@ if calculate_button:
                             vertical="center"
                         )
 
+                        # ----------------------------------
                         # COURSE HEADING
+                        # ----------------------------------
 
                         worksheet.merge_cells(
                             start_row=2,
@@ -1242,7 +1395,15 @@ if calculate_button:
                             vertical="center"
                         )
 
+                        # ----------------------------------
                         # COURSE CODE
+                        # ----------------------------------
+
+                        course_code_value = (
+                            str(values[2][0])
+                            if len(values) > 2
+                            else ""
+                        )
 
                         worksheet.merge_cells(
                             start_row=3,
@@ -1252,8 +1413,7 @@ if calculate_button:
                         )
 
                         worksheet["A3"] = (
-                            str(values[4][0])
-                            if len(values) > 4 else ""
+                            "COURSE CODE: " + course_code_value
                         )
 
                         worksheet["A3"].font = Font(
@@ -1267,7 +1427,9 @@ if calculate_button:
                             vertical="center"
                         )
 
+                        # ----------------------------------
                         # TABLE HEADER
+                        # ----------------------------------
 
                         for cell in worksheet[4]:
 
@@ -1286,7 +1448,9 @@ if calculate_button:
                                 vertical="center"
                             )
 
+                        # ----------------------------------
                         # BORDERS AND ALIGNMENT
+                        # ----------------------------------
 
                         thin_side = Side(
                             style="thin",
@@ -1316,7 +1480,37 @@ if calculate_button:
 
                                 cell.border = thin_border
 
+                        # ----------------------------------
+                        # HIGHLIGHT TOTAL ROW
+                        # ----------------------------------
+
+                        for row_num in range(
+                            5,
+                            worksheet.max_row + 1
+                        ):
+
+                            assessment_value = worksheet.cell(
+                                row=row_num,
+                                column=1
+                            ).value
+
+                            if str(assessment_value).strip().upper() == "TOTAL":
+
+                                for cell in worksheet[row_num]:
+
+                                    cell.fill = PatternFill(
+                                        fill_type="solid",
+                                        fgColor="F3EBDD"
+                                    )
+
+                                    cell.font = Font(
+                                        bold=True,
+                                        color="34495E"
+                                    )
+
+                        # ----------------------------------
                         # COLUMN WIDTHS
+                        # ----------------------------------
 
                         for col_num in range(
                             1,
@@ -1342,11 +1536,16 @@ if calculate_button:
                                         len(str(cell_value))
                                     )
 
-                            column_letter = get_column_letter(col_num)
+                            column_letter = get_column_letter(
+                                col_num
+                            )
 
                             worksheet.column_dimensions[
                                 column_letter
-                            ].width = min(max_length + 4, 25)
+                            ].width = min(
+                                max_length + 4,
+                                25
+                            )
 
                         worksheet.row_dimensions[1].height = 28
                         worksheet.row_dimensions[2].height = 24
@@ -1354,7 +1553,9 @@ if calculate_button:
 
                         worksheet.freeze_panes = "A5"
 
+                # ------------------------------------------
                 # DOWNLOAD EXCEL
+                # ------------------------------------------
 
                 if used_sheet_names:
 
