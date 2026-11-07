@@ -978,8 +978,14 @@ if calculate_button:
         # ------------------------------------------
         # EXCEL EXPORT - CO ASSESSMENT MATRIX ONLY
         # ------------------------------------------
+        st.write("DEBUG - result_df exists:", "result_df" in locals())
 
-        output = BytesIO()
+     if "result_df" in locals():
+       st.write("DEBUG - Matrix shape:", result_df.shape)
+     else:
+       st.error("result_df was not created before Excel export.")
+       st.stop()
+       output = BytesIO()
 
         # Create worksheet name using course code
         safe_course_code = "".join(
