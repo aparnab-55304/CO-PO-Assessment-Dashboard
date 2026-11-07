@@ -844,6 +844,7 @@ st.data_editor(
 )
 
 
+
 # ==================================================
 # CALCULATE ALLOCATION BUTTON
 # ==================================================
@@ -863,6 +864,10 @@ calculate_button = st.button(
 if calculate_button:
 
     errors = []
+
+    # ------------------------------------------
+    # VALIDATION
+    # ------------------------------------------
 
     for name, total_weight, selected_cos, assessment_co_weights in all_assessments:
 
@@ -889,6 +894,27 @@ if calculate_button:
             st.error(error)
 
     else:
+
+        # ------------------------------------------
+        # EXTRACT SEMESTER FROM COURSE CODE
+        # ------------------------------------------
+
+        course_code_str = str(course_code).strip()
+
+        try:
+            semester_number = int(course_code_str[-2:])
+
+            if semester_number < 1 or semester_number > 8:
+                raise ValueError("Invalid semester number")
+
+            semester = f"Semester {semester_number}"
+
+        except (ValueError, TypeError):
+            st.error(
+                "Could not identify the semester from the course code. "
+                "Expected the last two digits to be 01, 02, 03, etc."
+            )
+            st.stop()
 
         # ------------------------------------------
         # BUILD FINAL MATRIX
@@ -971,7 +997,7 @@ if calculate_button:
             )
 
         # ==========================================
-        # EXCEL EXPORT
+        # EXCEL EXPORT - CO MATRIX ONLY
         # ==========================================
 
         export_df = result_df.copy().round(2)
@@ -979,7 +1005,7 @@ if calculate_button:
         output = BytesIO()
 
         safe_course_code = "".join(
-            ch for ch in str(course_code)
+            ch for ch in course_code_str
             if ch not in '[]:*?/\\'
         ).strip("'")
 
@@ -993,6 +1019,7 @@ if calculate_button:
             + sheet_suffix
         )
 
+        # CREATE WORKBOOK
         with pd.ExcelWriter(
             output,
             engine="openpyxl"
@@ -1058,6 +1085,7 @@ if calculate_button:
 
             # MATRIX HEADINGS
             for cell in worksheet[4]:
+
                 cell.font = Font(
                     bold=True,
                     color="FFFFFF"
@@ -1078,6 +1106,7 @@ if calculate_button:
                 min_row=5,
                 max_row=worksheet.max_row
             ):
+
                 for cell in row:
                     cell.alignment = Alignment(
                         horizontal="center",
@@ -1093,12 +1122,14 @@ if calculate_button:
                 1,
                 worksheet.max_column + 1
             ):
+
                 max_length = 0
 
                 for row_num in range(
                     4,
                     worksheet.max_row + 1
                 ):
+
                     value = worksheet.cell(
                         row=row_num,
                         column=col_num
@@ -1139,17 +1170,23 @@ if calculate_button:
             )
 
             if success:
+
                 st.success(
                     f"Course {course_code} saved successfully! "
                     f"Revision: {result.get('revision', 'Updated')}"
                 )
+
             else:
+
                 st.error(
                     f"Google Sheets upload failed: {result}"
                 )
 
         except Exception as e:
-            st.error(f"Google Sheets upload error: {e}")
+
+            st.error(
+                f"Google Sheets upload error: {e}"
+            )
 
         # ==========================================
         # DOWNLOAD BUTTON
