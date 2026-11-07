@@ -31,6 +31,7 @@ EXCEL_FILE = Path(__file__).parent / "Course Group.xlsx"
 # PASTE YOUR DEPLOYED APPS SCRIPT WEB APP URL HERE
 APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwpDFtOmq7ofgryMbABdWiV8_GBI_DvboGTtYEfb9UdbMrL6WBcqRUOLUugSn-c-KZQ5Q/exec"
 
+
 # ==================================================
 # GOOGLE SHEETS FUNCTIONS
 # ==================================================
@@ -80,6 +81,7 @@ def upload_to_google_sheets(
 
         # Department sheet data:
         # Each row = Course Code, Assessment, COs, TOTAL
+
         department_rows = []
 
         for _, row in result_df.iterrows():
@@ -98,6 +100,7 @@ def upload_to_google_sheets(
 
         # Main Head data:
         # First row is the table heading.
+
         main_head_rows = [
             [
                 "Course Code",
@@ -161,10 +164,14 @@ def get_department_courses_from_google_sheets(department):
 
     try:
 
+        # GET request also requires the secret token
+        secret = st.secrets["app_secret"]
+
         response = requests.get(
             APPS_SCRIPT_URL,
             params={
-                "department": str(department).strip()
+                "department": str(department).strip(),
+                "token": secret
             },
             timeout=30
         )
@@ -183,6 +190,14 @@ def get_department_courses_from_google_sheets(department):
 
         return []
 
+    except KeyError:
+
+        st.error(
+            "Missing app_secret in Streamlit Secrets."
+        )
+
+        return []
+
     except Exception as e:
 
         st.error(
@@ -191,20 +206,6 @@ def get_department_courses_from_google_sheets(department):
 
         return []
 
-
-# ==================================================
-# PAGE CONFIGURATION
-# ==================================================
-
-st.set_page_config(
-    page_title="CO Weightage Allocation Dashboard",
-    page_icon="📊",
-    layout="wide"
-)
-
-EXCEL_FILE = Path(_file_).parent / "Course Group.xlsx"
-
-# The final matrix grand total is based on the sum of entered assessment weights.
 
 # ==================================================
 # CUSTOM CSS - SLATE BLUE + WARM BEIGE
@@ -365,6 +366,7 @@ st.markdown("""
     color: #26364A !important;
     font-weight: 700 !important;
 }
+
 .dashboard-department {
     color: #E8DCC9 !important;
     font-size: 14px;
@@ -372,8 +374,10 @@ st.markdown("""
     margin-top: 12px;
     margin-bottom: 0;
 }
+
 </style>
 """, unsafe_allow_html=True)
+
 
 # ==================================================
 # DASHBOARD HEADER
@@ -390,6 +394,7 @@ st.markdown("""
     </div>
 </div>
 """, unsafe_allow_html=True)
+
 
 # ==================================================
 # LOAD COURSE DETAILS FROM EXCEL
