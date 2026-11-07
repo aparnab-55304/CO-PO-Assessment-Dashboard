@@ -9,13 +9,15 @@ from pathlib import Path
 import requests
 import streamlit as st
 
+
 def upload_to_google_sheets(course_data):
 
     try:
-        url = st.secrets["https://script.google.com/macros/s/AKfycbwpDFtOmq7ofgryMbABdWiV8_GBI_DvboGTtYEfb9UdbMrL6WBcqRUOLUugSn-c-KZQ5Q/exec"]
+        url = st.secrets["APPS_SCRIPT_URL"]
+        secret = st.secrets["APP_SECRET"]
 
         payload = {
-            "token": st.secrets["CO-PO Dashboard$123#4567&8"],
+            "token": secret,
             "course_code": course_data["course_code"],
             "department": course_data["department"],
             "course_name": course_data["course_name"],
@@ -1135,30 +1137,13 @@ if calculate_button:
             worksheet.freeze_panes = "B5"
 
         output.seek(0)
-        # --------------------------------------
-        # GOOGLE SHEETS UPLOAD
-        # --------------------------------------
-
-        upload_to_google_sheets(output)
-
         output.seek(0)
 
-        # --------------------------------------
-        # DOWNLOAD BUTTON
-        # --------------------------------------
-
-        st.markdown(
-            '<div class="section-heading">Download Results</div>',
-            unsafe_allow_html=True
-        )
-
-        st.download_button(
-            label="Download Excel Report",
-            data=output,
-            file_name=f"{course_code}_CO_Assessment_Matrix.xlsx",
-            mime=(
-                "application/vnd.openxmlformats-officedocument."
-                "spreadsheetml.sheet"
-            ),
-            use_container_width=True
+st.download_button(
+    label="Download Excel Report",
+    data=output,
+    file_name=f"{course_code}_CO_Assessment_Matrix.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    use_container_width=True
+)
         )
