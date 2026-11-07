@@ -10,6 +10,7 @@ import requests
 import streamlit as st
 
 
+
 def upload_to_google_sheets(
     result_df,
     course_code,
@@ -22,28 +23,77 @@ def upload_to_google_sheets(
         url = st.secrets["APPS_SCRIPT_URL"]
         secret = st.secrets["APP_SECRET"]
 
+        # -----------------------------------
+        # CHECK ALLOCATION DATA
+        # -----------------------------------
+
+        if result_df is None or result_df.empty:
+            return False, "Allocation DataFrame is empty. Calculate Allocation first."
+
         allocation_rows = []
 
-        for _, row in result_df.iterrows():
+        co_columns = ["CO1", "CO2", "CO3", "CO4", "CO5"]
+
+        for index, row in result_df.iterrows():
+
+            # Assessment name can be a column or the DataFrame index
+            if "Assessment" in result_df.columns:
+                assessment = row["Assessment"]
+            else:
+                assessment = index
+
+            allocation_values = []
+
+            for co in co_columns:
+                value = row.get(co, 0)
+
+                if pd.isna(value):
+                    value = 0
+
+                allocation_values.append(float(value))
+
+            total = row.get("TOTAL", 0)
+
+            if pd.isna(total):
+                total = 0
+
             allocation_rows.append([
                 str(course_code).strip().upper(),
                 str(department),
                 str(course_name),
                 str(semester),
-                str(row["Assessment"]),
-                *[
-                    float(row.get(co, 0) or 0)
-                    for co in ["CO1", "CO2", "CO3", "CO4", "CO5"]
-                ],
-                float(row.get("TOTAL", 0) or 0)
+                str(assessment),
+                *allocation_values,
+                float(total)
             ])
+
+        # -----------------------------------
+        # VALIDATE GENERATED DATA
+        # -----------------------------------
+
+        if not allocation_rows:
+            return False, "No allocation rows were generated."
+
+        if not isinstance(book1_rows, list) or not book1_rows:
+            return False, "Book1 assessment data is missing."
+
+        # -----------------------------------
+        # PREPARE PAYLOAD
+        # -----------------------------------
 
         payload = {
             "token": secret,
             "course_code": str(course_code).strip().upper(),
+            "department": str(department),
+            "course_name": str(course_name),
+            "semester": str(semester),
             "allocation_rows": allocation_rows,
             "book1_rows": book1_rows
         }
+
+        # -----------------------------------
+        # SEND TO GOOGLE SHEETS
+        # -----------------------------------
 
         response = requests.post(
             url,
