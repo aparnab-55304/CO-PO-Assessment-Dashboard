@@ -4,59 +4,41 @@ import pandas as pd
 from openpyxl.styles import Font, PatternFill, Alignment, Border
 from openpyxl.utils import get_column_letter
 from io import BytesIO
-APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwpDFtOmq7ofgryMbABdWiV8_GBI_DvboGTtYEfb9UdbMrL6WBcqRUOLUugSn-c-KZQ5Q/exec"
-APP_SECRET = "CO-PO Dashboard$123#4567&8"
 from pathlib import Path
-def upload_to_google_sheets(excel_output):
+
+import requests
+import streamlit as st
+
+def upload_to_google_sheets(course_data):
+
     try:
         url = st.secrets["https://script.google.com/macros/s/AKfycbwpDFtOmq7ofgryMbABdWiV8_GBI_DvboGTtYEfb9UdbMrL6WBcqRUOLUugSn-c-KZQ5Q/exec"]
 
-        excel_output.seek(0)
-        workbook = pd.ExcelFile(excel_output)
-
-        all_rows = []
-
-        for sheet_name in workbook.sheet_names:
-            all_rows.append([f"--- {sheet_name} ---"])
-
-            df = pd.read_excel(
-                workbook,
-                sheet_name=sheet_name,
-                header=None
-            )
-
-            for row in df.itertuples(index=False, name=None):
-                clean_row = []
-
-                for value in row:
-                    if pd.isna(value):
-                        clean_row.append("")
-                    elif hasattr(value, "item"):
-                        clean_row.append(value.item())
-                    else:
-                        clean_row.append(value)
-
-                all_rows.append(clean_row)
-
-            all_rows.append([])
+        payload = {
+            "token": st.secrets["CO-PO Dashboard$123#4567&8"],
+            "course_code": course_data["course_code"],
+            "department": course_data["department"],
+            "course_name": course_data["course_name"],
+            "semester": course_data["semester"],
+            "final_values": course_data["final_values"]
+        }
 
         response = requests.post(
             url,
-            json={"values": all_rows},
+            json=payload,
             timeout=30
         )
 
         response.raise_for_status()
-
         result = response.json()
 
         if result.get("status") == "success":
-            st.success("Google Sheets updated successfully!")
-        else:
-            st.error(f"Google Sheets error: {result.get('message')}")
+            return True, result
+
+        return False, result.get("message", "Upload failed")
 
     except Exception as e:
-        st.error(f"Google Sheets upload failed: {e}")
+        return False, str(e)
 
 # ==================================================
 # PAGE CONFIGURATION
