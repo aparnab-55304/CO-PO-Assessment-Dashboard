@@ -1137,27 +1137,183 @@ if calculate_button:
             worksheet.freeze_panes = "B5"
 
         output.seek(0)
+
+# ------------------------------------------
+# EXCEL EXPORT - CO ASSESSMENT MATRIX ONLY
+# ------------------------------------------
+
+output = BytesIO()
+
+safe_course_code = "".join(
+    ch for ch in str(course_code)
+    if ch not in '[]:*?/\\'
+).strip("'")
+
+sheet_suffix = "-CO Matrix"
+
+sheet_name = (
+    safe_course_code[:31 - len(sheet_suffix)]
+    + sheet_suffix
+)
+
+with pd.ExcelWriter(
+    output,
+    engine="openpyxl"
+) as writer:
+
+    result_df.round(2).to_excel(
+        writer,
+        sheet_name=sheet_name,
+        index=False,
+        startrow=3
+    )
+
+    worksheet = writer.sheets[sheet_name]
+
+    last_column = result_df.shape[1]
+
+    # FIRST ROW - DEPARTMENT NAME
+    worksheet.merge_cells(
+        start_row=1,
+        start_column=1,
+        end_row=1,
+        end_column=last_column
+    )
+
+    worksheet["A1"] = department
+    worksheet["A1"].border = Border()
+    worksheet["A1"].font = Font(
+        bold=True,
+        size=16,
+        color="FFFFFF"
+    )
+    worksheet["A1"].fill = PatternFill(
+        fill_type="solid",
+        fgColor="26364A"
+    )
+    worksheet["A1"].alignment = Alignment(
+        horizontal="center",
+        vertical="center"
+    )
+
+    # SECOND ROW - COURSE NAME
+    worksheet.merge_cells(
+        start_row=2,
+        start_column=1,
+        end_row=2,
+        end_column=last_column
+    )
+
+    worksheet["A2"] = program
+    worksheet["A2"].border = Border()
+    worksheet["A2"].font = Font(
+        bold=True,
+        size=13,
+        color="26364A"
+    )
+    worksheet["A2"].alignment = Alignment(
+        horizontal="center",
+        vertical="center"
+    )
+
+    # FOURTH ROW - MATRIX HEADINGS
+    for cell in worksheet[4]:
+        cell.font = Font(
+            bold=True,
+            color="FFFFFF"
+        )
+        cell.fill = PatternFill(
+            fill_type="solid",
+            fgColor="26364A"
+        )
+        cell.alignment = Alignment(
+            horizontal="center",
+            vertical="center"
+        )
+
+    # MATRIX VALUES
+    for row in worksheet.iter_rows(
+        min_row=5,
+        max_row=worksheet.max_row
+    ):
+        for cell in row:
+            cell.alignment = Alignment(
+                horizontal="center",
+                vertical="center"
+            )
+
+    # BOLD TOTAL ROW
+    for cell in worksheet[worksheet.max_row]:
+        cell.font = Font(bold=True)
+
+    # COLUMN WIDTHS
+    for col_num in range(1, worksheet.max_column + 1):
+        max_length = 0
+
+        for row_num in range(4, worksheet.max_row + 1):
+            cell_value = worksheet.cell(
+                row=row_num,
+                column=col_num
+            ).value
+
+            if cell_value is not None:
+                max_length = max(
+                    max_length,
+                    len(str(cell_value))
+                )
+
+        column_letter = get_column_letter(col_num)
+
+        worksheet.column_dimensions[
+            column_letter
+        ].width = min(max_length + 4, 25)
+
+    worksheet.row_dimensions[1].height = 28
+    worksheet.row_dimensions[2].height = 24
+    worksheet.freeze_panes = "B5"
+
+output.seek(0)
+
+
 # --------------------------------------
 # GOOGLE SHEETS UPLOAD
 # --------------------------------------
 
 success, result = upload_to_google_sheets(
-    output,
+    result_df.round(2),
     course_code,
     department,
-    course_name,
+    program,
     semester
 )
 
 if success:
-
     st.success(
         f"Course {course_code} saved successfully! "
         f"Revision: {result['revision']}"
     )
-
 else:
-
     st.error(
         f"Google Sheets upload failed: {result}"
     )
+
+
+# --------------------------------------
+# DOWNLOAD BUTTON
+# --------------------------------------
+
+st.markdown(
+    '<div class="section-heading">Download Results</div>',
+    unsafe_allow_html=True
+)
+
+st.download_button(
+    label="Download Excel Report",
+    data=output,
+    file_name=f"{course_code}_CO_Assessment_Matrix.xlsx",
+    mime=(
+        "application/vnd.openxmlformats-officedocument."
+        "spreadsheetml.sheet"
+    ),
+    use_container_width=True
+)
