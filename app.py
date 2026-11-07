@@ -1138,6 +1138,7 @@ if calculate_button:
 
         output.seek(0)
 
+
 # ------------------------------------------
 # EXCEL EXPORT - CO ASSESSMENT MATRIX ONLY
 # ------------------------------------------
@@ -1172,7 +1173,7 @@ with pd.ExcelWriter(
 
     last_column = result_df.shape[1]
 
-    # FIRST ROW - DEPARTMENT NAME
+    # DEPARTMENT NAME
     worksheet.merge_cells(
         start_row=1,
         start_column=1,
@@ -1181,22 +1182,17 @@ with pd.ExcelWriter(
     )
 
     worksheet["A1"] = department
-    worksheet["A1"].border = Border()
     worksheet["A1"].font = Font(
-        bold=True,
-        size=16,
-        color="FFFFFF"
+        bold=True, size=16, color="FFFFFF"
     )
     worksheet["A1"].fill = PatternFill(
-        fill_type="solid",
-        fgColor="26364A"
+        fill_type="solid", fgColor="26364A"
     )
     worksheet["A1"].alignment = Alignment(
-        horizontal="center",
-        vertical="center"
+        horizontal="center", vertical="center"
     )
 
-    # SECOND ROW - COURSE NAME
+    # COURSE NAME
     worksheet.merge_cells(
         start_row=2,
         start_column=1,
@@ -1205,30 +1201,21 @@ with pd.ExcelWriter(
     )
 
     worksheet["A2"] = program
-    worksheet["A2"].border = Border()
     worksheet["A2"].font = Font(
-        bold=True,
-        size=13,
-        color="26364A"
+        bold=True, size=13, color="26364A"
     )
     worksheet["A2"].alignment = Alignment(
-        horizontal="center",
-        vertical="center"
+        horizontal="center", vertical="center"
     )
 
-    # FOURTH ROW - MATRIX HEADINGS
+    # MATRIX HEADINGS
     for cell in worksheet[4]:
-        cell.font = Font(
-            bold=True,
-            color="FFFFFF"
-        )
+        cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill(
-            fill_type="solid",
-            fgColor="26364A"
+            fill_type="solid", fgColor="26364A"
         )
         cell.alignment = Alignment(
-            horizontal="center",
-            vertical="center"
+            horizontal="center", vertical="center"
         )
 
     # MATRIX VALUES
@@ -1238,11 +1225,10 @@ with pd.ExcelWriter(
     ):
         for cell in row:
             cell.alignment = Alignment(
-                horizontal="center",
-                vertical="center"
+                horizontal="center", vertical="center"
             )
 
-    # BOLD TOTAL ROW
+    # TOTAL ROW
     for cell in worksheet[worksheet.max_row]:
         cell.font = Font(bold=True)
 
@@ -1251,22 +1237,18 @@ with pd.ExcelWriter(
         max_length = 0
 
         for row_num in range(4, worksheet.max_row + 1):
-            cell_value = worksheet.cell(
+            value = worksheet.cell(
                 row=row_num,
                 column=col_num
             ).value
 
-            if cell_value is not None:
-                max_length = max(
-                    max_length,
-                    len(str(cell_value))
-                )
+            if value is not None:
+                max_length = max(max_length, len(str(value)))
 
         column_letter = get_column_letter(col_num)
-
-        worksheet.column_dimensions[
-            column_letter
-        ].width = min(max_length + 4, 25)
+        worksheet.column_dimensions[column_letter].width = min(
+            max_length + 4, 25
+        )
 
     worksheet.row_dimensions[1].height = 28
     worksheet.row_dimensions[2].height = 24
@@ -1275,9 +1257,9 @@ with pd.ExcelWriter(
 output.seek(0)
 
 
-# --------------------------------------
+# ------------------------------------------
 # GOOGLE SHEETS UPLOAD
-# --------------------------------------
+# ------------------------------------------
 
 success, result = upload_to_google_sheets(
     result_df.round(2),
@@ -1298,9 +1280,9 @@ else:
     )
 
 
-# --------------------------------------
+# ------------------------------------------
 # DOWNLOAD BUTTON
-# --------------------------------------
+# ------------------------------------------
 
 st.markdown(
     '<div class="section-heading">Download Results</div>',
