@@ -1137,13 +1137,27 @@ if calculate_button:
             worksheet.freeze_panes = "B5"
 
         output.seek(0)
-        output.seek(0)
+# --------------------------------------
+# GOOGLE SHEETS UPLOAD
+# --------------------------------------
 
-st.download_button(
-    label="Download Excel Report",
-    data=output,
-    file_name=f"{course_code}_CO_Assessment_Matrix.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    use_container_width=True
+success, result = upload_to_google_sheets(
+    output,
+    course_code,
+    department,
+    course_name,
+    semester
 )
-        )
+
+if success:
+
+    st.success(
+        f"Course {course_code} saved successfully! "
+        f"Revision: {result['revision']}"
+    )
+
+else:
+
+    st.error(
+        f"Google Sheets upload failed: {result}"
+    )
