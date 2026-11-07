@@ -15,25 +15,34 @@ def upload_to_google_sheets(
     course_code,
     department,
     course_name,
-    semester
+    semester,
+    book1_rows
 ):
     try:
         url = st.secrets["APPS_SCRIPT_URL"]
         secret = st.secrets["APP_SECRET"]
 
-        final_values = (
-            result_df.astype(object)
-            .where(pd.notna(result_df), "")
-            .values.tolist()
-        )
+        allocation_rows = []
+
+        for _, row in result_df.iterrows():
+            allocation_rows.append([
+                str(course_code).strip().upper(),
+                str(department),
+                str(course_name),
+                str(semester),
+                str(row["Assessment"]),
+                *[
+                    float(row.get(co, 0) or 0)
+                    for co in ["CO1", "CO2", "CO3", "CO4", "CO5"]
+                ],
+                float(row.get("TOTAL", 0) or 0)
+            ])
 
         payload = {
             "token": secret,
             "course_code": str(course_code).strip().upper(),
-            "department": str(department),
-            "course_name": str(course_name),
-            "semester": str(semester),
-            "final_values": final_values
+            "allocation_rows": allocation_rows,
+            "book1_rows": book1_rows
         }
 
         response = requests.post(
@@ -56,7 +65,6 @@ def upload_to_google_sheets(
 
     except Exception as e:
         return False, str(e)
-
 
 # ==================================================
 # PAGE CONFIGURATION
@@ -863,6 +871,7 @@ st.data_editor(
 
 
 
+
 # ==================================================
 # CALCULATE ALLOCATION BUTTON
 # ==================================================
@@ -874,10 +883,6 @@ calculate_button = st.button(
     use_container_width=True
 )
 
-
-# ==================================================
-# FINAL MATRIX AND EXCEL EXPORT
-# ==================================================
 
 if calculate_button:
 
@@ -914,45 +919,63 @@ if calculate_button:
     else:
 
         # ------------------------------------------
-        # EXTRACT SEMESTER FROM COURSE CODE
+        # COURSE DETAILS
         # ------------------------------------------
 
         course_code_str = str(course_code).strip()
+        course_code_key = course_code_str.upper()
 
         try:
-
             semester_number = int(course_code_str[-2:])
 
-            if semester_number < 1 or semester_number > 8:
-                raise ValueError("Invalid semester number")
+            if not 1 <= semester_number <= 8:
+                raise ValueError
 
             semester = f"Semester {semester_number}"
 
         except (ValueError, TypeError):
-
             st.error(
-                "Could not identify the semester from the course code. "
-                "Expected the last two digits to be 01, 02, 03, etc."
+                "Could not identify semester from course code. "
+                "The last two digits must represent semester 01 to 08."
             )
-
             st.stop()
 
         # ------------------------------------------
-        # BUILD FINAL CO MATRIX
+        # BUILD ALLOCATION MATRIX
         # ------------------------------------------
+
+        assessment_names = ["PA1", "PA2", "LE1", "LM"]
+
+        display_names = {
+            "PA1": "PA1",
+            "PA2": "PA2",
+            "LE1": "LE",
+            "LM": "LM"
+        }
+
+        co_names = ["CO1", "CO2", "CO3", "CO4", "CO5"]
 
         matrix_rows = []
 
-        for name in ["PA1", "PA2", "LE1", "LM"]:
+        for assessment in assessment_names:
 
-            row = {"Assessment": name}
+            row = {
+                "Assessment": display_names[assessment]
+            }
 
-            for co in co_list:
-                row[co] = allocation_matrix.loc[name, co]
+            for co in co_names:
+                if (
+                    assessment in allocation_matrix.index
+                    and co in allocation_matrix.columns
+                ):
+                    row[co] = float(
+                        allocation_matrix.loc[assessment, co]
+                    )
+                else:
+                    row[co] = 0.0
 
             row["TOTAL"] = sum(
-                allocation_matrix.loc[name, co]
-                for co in co_list
+                row[co] for co in co_names
             )
 
             matrix_rows.append(row)
@@ -963,20 +986,22 @@ if calculate_button:
 
         total_row = {"Assessment": "TOTAL"}
 
-        for co in co_list:
-            total_row[co] = allocation_matrix[co].sum()
+        for co in co_names:
+            total_row[co] = sum(
+                row[co] for row in matrix_rows
+            )
 
         total_row["TOTAL"] = sum(
-            total_row[co] for co in co_list
+            total_row[co] for co in co_names
         )
 
         matrix_rows.append(total_row)
 
         result_df = pd.DataFrame(matrix_rows)
 
-        # ------------------------------------------
-        # DISPLAY FINAL MATRIX
-        # ------------------------------------------
+        # ==========================================
+        # DISPLAY ALLOCATION MATRIX
+        # ==========================================
 
         st.markdown("---")
 
@@ -993,9 +1018,9 @@ if calculate_button:
             hide_index=True
         )
 
-        # ------------------------------------------
+        # ==========================================
         # SUMMARY METRICS
-        # ------------------------------------------
+        # ==========================================
 
         metric1, metric2, metric3 = st.columns(3)
 
@@ -1018,15 +1043,121 @@ if calculate_button:
             )
 
         # ==========================================
-        # EXCEL EXPORT - TWO SHEETS
+        # BUILD BOOK1 FORMAT FOR MAIN HEAD
+        # ==========================================
+
+        book1_rows = []
+
+        # First header
+        book1_rows.append([
+            "COURSE CODE",
+            "",
+            "CO1",
+            "CO2",
+            "CO3",
+            "CO4",
+            "CO5"
+        ])
+
+        # First block
+        for assessment in assessment_names:
+
+            row = [
+                "",
+                display_names[assessment]
+            ]
+
+            for co in co_names:
+                if (
+                    assessment in allocation_matrix.index
+                    and co in allocation_matrix.columns
+                ):
+                    value = allocation_matrix.loc[assessment, co]
+                else:
+                    value = 0
+
+                row.append(round(float(value), 2))
+
+            book1_rows.append(row)
+
+        # Second block
+        for assessment in assessment_names:
+
+            row = [
+                course_code_str if assessment == "PA1" else "",
+                display_names[assessment]
+            ]
+
+            for co in co_names:
+                if (
+                    assessment in allocation_matrix.index
+                    and co in allocation_matrix.columns
+                ):
+                    value = allocation_matrix.loc[assessment, co]
+                else:
+                    value = 0
+
+                row.append(round(float(value), 2))
+
+            book1_rows.append(row)
+
+        # ==========================================
+        # EXCEL DOWNLOAD - TEACHER VERSION
+        # CURRENT COURSE ONLY
         # ==========================================
 
         output = BytesIO()
 
         workbook = Workbook()
 
+        ws = workbook.active
+        ws.title = "Current Course"
+
+        ws.append([
+            "Course Code",
+            course_code_str
+        ])
+
+        ws.append([
+            "Department",
+            department
+        ])
+
+        ws.append([
+            "Course Name",
+            program
+        ])
+
+        ws.append([
+            "Semester",
+            semester
+        ])
+
+        ws.append([])
+
+        ws.append([
+            "Assessment",
+            "CO1",
+            "CO2",
+            "CO3",
+            "CO4",
+            "CO5",
+            "TOTAL"
+        ])
+
+        for _, row in result_df.iterrows():
+
+            ws.append([
+                row["Assessment"],
+                *[
+                    round(float(row.get(co, 0)), 2)
+                    for co in co_names
+                ],
+                round(float(row["TOTAL"]), 2)
+            ])
+
         # ------------------------------------------
-        # COMMON FORMATTING
+        # EXCEL FORMATTING
         # ------------------------------------------
 
         header_fill = PatternFill(
@@ -1039,7 +1170,10 @@ if calculate_button:
             color="FFFFFF"
         )
 
-        total_font = Font(bold=True)
+        total_fill = PatternFill(
+            fill_type="solid",
+            fgColor="D9EAD3"
+        )
 
         center = Alignment(
             horizontal="center",
@@ -1053,237 +1187,35 @@ if calculate_button:
             bottom=Side(style="thin")
         )
 
-        def format_sheet(ws):
+        for row in ws.iter_rows():
 
-            for row in ws.iter_rows():
+            for cell in row:
+                cell.alignment = center
+                cell.border = thin_border
 
-                for cell in row:
-                    cell.alignment = center
-                    cell.border = thin_border
+        for cell in ws[6]:
+            cell.fill = header_fill
+            cell.font = header_font
 
-            for cell in ws[1]:
+        for cell in ws[11]:
+            cell.fill = total_fill
+            cell.font = Font(bold=True)
 
-                if cell.value is not None:
-                    cell.fill = header_fill
-                    cell.font = header_font
+        for column in ws.columns:
 
-            for column in ws.columns:
-
-                max_length = max(
-                    len(str(cell.value))
-                    if cell.value is not None else 0
-                    for cell in column
-                )
-
-                ws.column_dimensions[
-                    column[0].column_letter
-                ].width = max(max_length + 4, 12)
-
-        # ------------------------------------------
-        # SAFE CO ALLOCATION LOOKUP
-        # ------------------------------------------
-
-        def get_co_value(assessment, co):
-
-            if (
-                assessment in allocation_matrix.index
-                and co in allocation_matrix.columns
-            ):
-                return round(
-                    float(allocation_matrix.loc[assessment, co]),
-                    2
-                )
-
-            return 0
-
-        # ==========================================
-        # SHEET 1: COURSE SUMMARY
-        # ==========================================
-
-        ws1 = workbook.active
-        ws1.title = "Course Summary"
-
-        ws1.append([
-            course_code_str,
-            "Weight",
-            "CO1",
-            "CO2",
-            "CO3",
-            "CO4",
-            "TOTAL"
-        ])
-
-        # ------------------------------------------
-        # PO SUMMARY DATA
-        # ------------------------------------------
-        # po_summary_df was not defined in your
-        # uploaded code. Therefore, use zero values
-        # until the actual PO calculation is connected.
-
-        po_df = pd.DataFrame(
-            columns=[
-                "Assessment",
-                "Weight",
-                "CO1",
-                "CO2",
-                "CO3",
-                "CO4",
-                "TOTAL"
-            ]
-        )
-
-        for assessment in ["PO1", "PO2", "LE", "LM"]:
-
-            matching_rows = po_df[
-                po_df["Assessment"] == assessment
-            ]
-
-            row_values = [
-                assessment,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0
-            ]
-
-            if not matching_rows.empty:
-
-                row_data = matching_rows.iloc[0]
-
-                row_values = [
-                    assessment,
-                    row_data.get("Weight", 0),
-                    row_data.get("CO1", 0),
-                    row_data.get("CO2", 0),
-                    row_data.get("CO3", 0),
-                    row_data.get("CO4", 0),
-                    row_data.get("TOTAL", 0)
-                ]
-
-            ws1.append(row_values)
-
-        # ------------------------------------------
-        # FIRST SHEET TOTAL ROW
-        # ------------------------------------------
-
-        ws1.append([
-            "TOTAL",
-
-            sum(
-                ws1.cell(row=r, column=2).value or 0
-                for r in range(2, 6)
-            ),
-
-            *[
-                sum(
-                    ws1.cell(row=r, column=c).value or 0
-                    for r in range(2, 6)
-                )
-                for c in range(3, 7)
-            ],
-
-            sum(
-                ws1.cell(row=r, column=7).value or 0
-                for r in range(2, 6)
+            max_length = max(
+                len(str(cell.value))
+                if cell.value is not None else 0
+                for cell in column
             )
-        ])
 
-        format_sheet(ws1)
+            ws.column_dimensions[
+                column[0].column_letter
+            ].width = max(max_length + 4, 12)
 
-        for cell in ws1[6]:
-            cell.font = total_font
-
-        ws1.freeze_panes = "C2"
-
-        # ==========================================
-        # SHEET 2: CO-PO ASSESSMENT
-        # ==========================================
-
-        ws2 = workbook.create_sheet("CO-PO Assessment")
-
-        ws2.append([
-            course_code_str,
-            "",
-            "CO1",
-            "CO2",
-            "CO3",
-            "CO4",
-            "CO5"
-        ])
-
-        assessment_names = [
-            "PA1",
-            "PA2",
-            "LE1",
-            "LM"
-        ]
-
-        display_names = {
-            "PA1": "PA1",
-            "PA2": "PA2",
-            "LE1": "LE",
-            "LM": "LM"
-        }
-
-        # ------------------------------------------
-        # FIRST BLOCK
-        # ------------------------------------------
-
-        for assessment in assessment_names:
-
-            row = [
-                "",
-                display_names[assessment]
-            ]
-
-            for co in ["CO1", "CO2", "CO3", "CO4", "CO5"]:
-
-                value = get_co_value(assessment, co)
-
-                row.append(value)
-
-            ws2.append(row)
-
-        # ------------------------------------------
-        # SECOND BLOCK
-        # ------------------------------------------
-
-        ws2.append([
-            course_code_str,
-            "PA1",
-            *[
-                get_co_value("PA1", co)
-                for co in ["CO1", "CO2", "CO3", "CO4", "CO5"]
-            ]
-        ])
-
-        for assessment in ["PA2", "LE1", "LM"]:
-
-            row = [
-                "",
-                display_names[assessment]
-            ]
-
-            for co in ["CO1", "CO2", "CO3", "CO4", "CO5"]:
-
-                value = get_co_value(assessment, co)
-
-                row.append(value)
-
-            ws2.append(row)
-
-        format_sheet(ws2)
-
-        ws2.freeze_panes = "C2"
-
-        # ------------------------------------------
-        # SAVE WORKBOOK
-        # ------------------------------------------
+        ws.freeze_panes = "B7"
 
         workbook.save(output)
-
         output.seek(0)
 
         excel_data = output.getvalue()
@@ -1296,16 +1228,17 @@ if calculate_button:
 
             success, result = upload_to_google_sheets(
                 result_df.round(2),
-                course_code,
+                course_code_key,
                 department,
                 program,
-                semester
+                semester,
+                book1_rows
             )
 
             if success:
 
                 st.success(
-                    f"Course {course_code} saved successfully! "
+                    f"Course {course_code_str} saved successfully! "
                     f"Revision: {result.get('revision', 'Updated')}"
                 )
 
@@ -1322,7 +1255,7 @@ if calculate_button:
             )
 
         # ==========================================
-        # DOWNLOAD EXCEL REPORT
+        # DOWNLOAD CURRENT COURSE
         # ==========================================
 
         safe_course_code = "".join(
@@ -1339,13 +1272,13 @@ if calculate_button:
         )
 
         st.download_button(
-            label="Download Excel Report",
+            label="Download Current Course Excel",
             data=excel_data,
-            file_name=f"{safe_course_code}_Assessment_Report.xlsx",
+            file_name=f"{safe_course_code}_Current_Course.xlsx",
             mime=(
                 "application/vnd.openxmlformats-officedocument."
                 "spreadsheetml.sheet"
             ),
             use_container_width=True,
-            key="download_co_matrix"
+            key="download_current_course"
         )
