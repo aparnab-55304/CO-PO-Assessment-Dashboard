@@ -864,8 +864,6 @@ if calculate_button:
 
     errors = []
 
-    # Validate all four assessments because each requires
-    # individually selected COs and assigned CO weights.
     for name, total_weight, selected_cos, assessment_co_weights in all_assessments:
 
         assigned_total = sum(
@@ -955,244 +953,221 @@ if calculate_button:
         metric1, metric2, metric3 = st.columns(3)
 
         with metric1:
-
             st.metric(
                 "Total Assessment Allocation",
                 f"{total_row['TOTAL']:.2f}"
             )
 
         with metric2:
-
             st.metric(
                 "Total Fixed CO Weightage",
                 f"{fixed_co_weightage_total:.2f}"
             )
 
         with metric3:
-
             st.metric(
                 "Number of Course Outcomes",
                 len(co_list)
             )
 
-        
+        # ==========================================
+        # EXCEL EXPORT
+        # ==========================================
 
-# ------------------------------------------
-# EXCEL EXPORT - CO ASSESSMENT MATRIX ONLY
-# ------------------------------------------
+        export_df = result_df.copy().round(2)
 
-# Check whether the final matrix exists
-if "result_df" not in locals() or result_df is None:
-    st.error("Final CO Assessment Matrix was not generated.")
-    st.stop()
+        output = BytesIO()
 
-if result_df.empty:
-    st.error("The CO Assessment Matrix is empty.")
-    st.stop()
+        safe_course_code = "".join(
+            ch for ch in str(course_code)
+            if ch not in '[]:*?/\\'
+        ).strip("'")
 
-# Create a clean copy for export
-export_df = result_df.copy().round(2)
+        if not safe_course_code:
+            safe_course_code = "Course"
 
-# Create Excel output
-output = BytesIO()
+        sheet_suffix = "-CO Matrix"
 
-# Create a valid worksheet name
-safe_course_code = "".join(
-    ch for ch in str(course_code)
-    if ch not in '[]:*?/\\'
-).strip("'")
-
-sheet_suffix = "-CO Matrix"
-
-if not safe_course_code:
-    safe_course_code = "Course"
-
-sheet_name = (
-    safe_course_code[:31 - len(sheet_suffix)]
-    + sheet_suffix
-)
-
-# ------------------------------------------
-# CREATE EXCEL WORKBOOK
-# ------------------------------------------
-
-with pd.ExcelWriter(
-    output,
-    engine="openpyxl"
-) as writer:
-
-    export_df.to_excel(
-        writer,
-        sheet_name=sheet_name,
-        index=False,
-        startrow=3
-    )
-
-    worksheet = writer.sheets[sheet_name]
-
-    last_column = max(export_df.shape[1], 1)
-
-    # FIRST ROW - DEPARTMENT NAME
-    worksheet.merge_cells(
-        start_row=1,
-        start_column=1,
-        end_row=1,
-        end_column=last_column
-    )
-
-    worksheet["A1"] = str(department)
-
-    worksheet["A1"].font = Font(
-        bold=True,
-        size=16,
-        color="FFFFFF"
-    )
-
-    worksheet["A1"].fill = PatternFill(
-        fill_type="solid",
-        fgColor="26364A"
-    )
-
-    worksheet["A1"].alignment = Alignment(
-        horizontal="center",
-        vertical="center"
-    )
-
-    # SECOND ROW - COURSE NAME
-    worksheet.merge_cells(
-        start_row=2,
-        start_column=1,
-        end_row=2,
-        end_column=last_column
-    )
-
-    worksheet["A2"] = str(program)
-
-    worksheet["A2"].font = Font(
-        bold=True,
-        size=13,
-        color="26364A"
-    )
-
-    worksheet["A2"].alignment = Alignment(
-        horizontal="center",
-        vertical="center"
-    )
-
-    # FOURTH ROW - MATRIX HEADINGS
-    for cell in worksheet[4]:
-        cell.font = Font(
-            bold=True,
-            color="FFFFFF"
+        sheet_name = (
+            safe_course_code[:31 - len(sheet_suffix)]
+            + sheet_suffix
         )
 
-        cell.fill = PatternFill(
-            fill_type="solid",
-            fgColor="26364A"
-        )
+        with pd.ExcelWriter(
+            output,
+            engine="openpyxl"
+        ) as writer:
 
-        cell.alignment = Alignment(
-            horizontal="center",
-            vertical="center"
-        )
+            export_df.to_excel(
+                writer,
+                sheet_name=sheet_name,
+                index=False,
+                startrow=3
+            )
 
-    # MATRIX VALUES
-    for row in worksheet.iter_rows(
-        min_row=5,
-        max_row=worksheet.max_row
-    ):
-        for cell in row:
-            cell.alignment = Alignment(
+            worksheet = writer.sheets[sheet_name]
+
+            last_column = max(export_df.shape[1], 1)
+
+            # DEPARTMENT NAME
+            worksheet.merge_cells(
+                start_row=1,
+                start_column=1,
+                end_row=1,
+                end_column=last_column
+            )
+
+            worksheet["A1"] = str(department)
+
+            worksheet["A1"].font = Font(
+                bold=True,
+                size=16,
+                color="FFFFFF"
+            )
+
+            worksheet["A1"].fill = PatternFill(
+                fill_type="solid",
+                fgColor="26364A"
+            )
+
+            worksheet["A1"].alignment = Alignment(
                 horizontal="center",
                 vertical="center"
             )
 
-    # BOLD TOTAL ROW
-    for cell in worksheet[worksheet.max_row]:
-        cell.font = Font(bold=True)
+            # COURSE NAME
+            worksheet.merge_cells(
+                start_row=2,
+                start_column=1,
+                end_row=2,
+                end_column=last_column
+            )
 
-    # COLUMN WIDTHS
-    for col_num in range(
-        1,
-        worksheet.max_column + 1
-    ):
-        max_length = 0
+            worksheet["A2"] = str(program)
 
-        for row_num in range(
-            4,
-            worksheet.max_row + 1
-        ):
-            value = worksheet.cell(
-                row=row_num,
-                column=col_num
-            ).value
+            worksheet["A2"].font = Font(
+                bold=True,
+                size=13,
+                color="26364A"
+            )
 
-            if value is not None:
-                max_length = max(
-                    max_length,
-                    len(str(value))
+            worksheet["A2"].alignment = Alignment(
+                horizontal="center",
+                vertical="center"
+            )
+
+            # MATRIX HEADINGS
+            for cell in worksheet[4]:
+                cell.font = Font(
+                    bold=True,
+                    color="FFFFFF"
                 )
 
-        column_letter = get_column_letter(col_num)
+                cell.fill = PatternFill(
+                    fill_type="solid",
+                    fgColor="26364A"
+                )
 
-        worksheet.column_dimensions[
-            column_letter
-        ].width = min(max_length + 4, 25)
+                cell.alignment = Alignment(
+                    horizontal="center",
+                    vertical="center"
+                )
 
-    worksheet.row_dimensions[1].height = 28
-    worksheet.row_dimensions[2].height = 24
-    worksheet.freeze_panes = "B5"
+            # MATRIX VALUES
+            for row in worksheet.iter_rows(
+                min_row=5,
+                max_row=worksheet.max_row
+            ):
+                for cell in row:
+                    cell.alignment = Alignment(
+                        horizontal="center",
+                        vertical="center"
+                    )
 
-# Prepare workbook for download
-output.seek(0)
+            # TOTAL ROW
+            for cell in worksheet[worksheet.max_row]:
+                cell.font = Font(bold=True)
 
-excel_data = output.getvalue()
+            # COLUMN WIDTHS
+            for col_num in range(
+                1,
+                worksheet.max_column + 1
+            ):
+                max_length = 0
 
+                for row_num in range(
+                    4,
+                    worksheet.max_row + 1
+                ):
+                    value = worksheet.cell(
+                        row=row_num,
+                        column=col_num
+                    ).value
 
-# ------------------------------------------
-# GOOGLE SHEETS UPLOAD
-# ------------------------------------------
+                    if value is not None:
+                        max_length = max(
+                            max_length,
+                            len(str(value))
+                        )
 
-try:
-    success, result = upload_to_google_sheets(
-        export_df,
-        course_code,
-        department,
-        program,
-        semester
-    )
+                column_letter = get_column_letter(col_num)
 
-    if success:
-        st.success(
-            f"Course {course_code} saved successfully! "
-            f"Revision: {result.get('revision', 'Updated')}"
+                worksheet.column_dimensions[
+                    column_letter
+                ].width = min(max_length + 4, 25)
+
+            worksheet.row_dimensions[1].height = 28
+            worksheet.row_dimensions[2].height = 24
+            worksheet.freeze_panes = "B5"
+
+        output.seek(0)
+
+        excel_data = output.getvalue()
+
+        # ==========================================
+        # GOOGLE SHEETS UPLOAD
+        # ==========================================
+
+        try:
+
+            success, result = upload_to_google_sheets(
+                export_df,
+                course_code,
+                department,
+                program,
+                semester
+            )
+
+            if success:
+                st.success(
+                    f"Course {course_code} saved successfully! "
+                    f"Revision: {result.get('revision', 'Updated')}"
+                )
+            else:
+                st.error(
+                    f"Google Sheets upload failed: {result}"
+                )
+
+        except Exception as e:
+            st.error(f"Google Sheets upload error: {e}")
+
+        # ==========================================
+        # DOWNLOAD BUTTON
+        # ==========================================
+
+        st.markdown(
+            '<div class="section-heading">Download Results</div>',
+            unsafe_allow_html=True
         )
-    else:
-        st.error(
-            f"Google Sheets upload failed: {result}"
+
+        st.download_button(
+            label="Download Excel Report",
+            data=excel_data,
+            file_name=f"{safe_course_code}_CO_Assessment_Matrix.xlsx",
+            mime=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+            use_container_width=True,
+            key="download_co_matrix"
         )
-
-except Exception as e:
-    st.error(f"Google Sheets upload error: {e}")
-
-
-# ------------------------------------------
-# DOWNLOAD BUTTON
-# ------------------------------------------
-
-st.markdown(
-    '<div class="section-heading">Download Results</div>',
-    unsafe_allow_html=True
-)
-
-st.download_button(
-    label="Download Excel Report",
-    data=excel_data,
-    file_name=f"{safe_course_code}_CO_Assessment_Matrix.xlsx",
-    mime=(
-        "application/vnd.openxmlformats-officedocument."
-        "spreadsheetml.sheet"
-    ),
-    use_container_width=True,
-    key="download_co_matrix"
-)
