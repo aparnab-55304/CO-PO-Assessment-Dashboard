@@ -861,6 +861,7 @@ st.data_editor(
 
 
 
+
 # ==================================================
 # CALCULATE ALLOCATION BUTTON
 # ==================================================
@@ -918,6 +919,7 @@ if calculate_button:
         course_code_str = str(course_code).strip()
 
         try:
+
             semester_number = int(course_code_str[-2:])
 
             if semester_number < 1 or semester_number > 8:
@@ -926,14 +928,16 @@ if calculate_button:
             semester = f"Semester {semester_number}"
 
         except (ValueError, TypeError):
+
             st.error(
                 "Could not identify the semester from the course code. "
                 "Expected the last two digits to be 01, 02, 03, etc."
             )
+
             st.stop()
 
         # ------------------------------------------
-        # BUILD FINAL MATRIX
+        # BUILD FINAL CO MATRIX
         # ------------------------------------------
 
         matrix_rows = []
@@ -1013,159 +1017,270 @@ if calculate_button:
             )
 
         # ==========================================
-        # EXCEL EXPORT - CO MATRIX ONLY
+        # EXCEL EXPORT - TWO SHEETS
         # ==========================================
-
-        export_df = result_df.copy().round(2)
 
         output = BytesIO()
 
-        safe_course_code = "".join(
-            ch for ch in course_code_str
-            if ch not in '[]:*?/\\'
-        ).strip("'")
+        workbook = Workbook()
 
-        if not safe_course_code:
-            safe_course_code = "Course"
+        # ------------------------------------------
+        # COMMON FORMATTING
+        # ------------------------------------------
 
-        sheet_suffix = "-CO Matrix"
-
-        sheet_name = (
-            safe_course_code[:31 - len(sheet_suffix)]
-            + sheet_suffix
+        header_fill = PatternFill(
+            fill_type="solid",
+            fgColor="26364A"
         )
 
-        # CREATE WORKBOOK
-        with pd.ExcelWriter(
-            output,
-            engine="openpyxl"
-        ) as writer:
+        header_font = Font(
+            bold=True,
+            color="FFFFFF"
+        )
 
-            export_df.to_excel(
-                writer,
-                sheet_name=sheet_name,
-                index=False,
-                startrow=3
-            )
+        total_font = Font(bold=True)
 
-            worksheet = writer.sheets[sheet_name]
+        center = Alignment(
+            horizontal="center",
+            vertical="center"
+        )
 
-            last_column = max(export_df.shape[1], 1)
+        thin_border = Border(
+            left=Side(style="thin"),
+            right=Side(style="thin"),
+            top=Side(style="thin"),
+            bottom=Side(style="thin")
+        )
 
-            # DEPARTMENT NAME
-            worksheet.merge_cells(
-                start_row=1,
-                start_column=1,
-                end_row=1,
-                end_column=last_column
-            )
+        def format_sheet(ws):
 
-            worksheet["A1"] = str(department)
-
-            worksheet["A1"].font = Font(
-                bold=True,
-                size=16,
-                color="FFFFFF"
-            )
-
-            worksheet["A1"].fill = PatternFill(
-                fill_type="solid",
-                fgColor="26364A"
-            )
-
-            worksheet["A1"].alignment = Alignment(
-                horizontal="center",
-                vertical="center"
-            )
-
-            # COURSE NAME
-            worksheet.merge_cells(
-                start_row=2,
-                start_column=1,
-                end_row=2,
-                end_column=last_column
-            )
-
-            worksheet["A2"] = str(program)
-
-            worksheet["A2"].font = Font(
-                bold=True,
-                size=13,
-                color="26364A"
-            )
-
-            worksheet["A2"].alignment = Alignment(
-                horizontal="center",
-                vertical="center"
-            )
-
-            # MATRIX HEADINGS
-            for cell in worksheet[4]:
-
-                cell.font = Font(
-                    bold=True,
-                    color="FFFFFF"
-                )
-
-                cell.fill = PatternFill(
-                    fill_type="solid",
-                    fgColor="26364A"
-                )
-
-                cell.alignment = Alignment(
-                    horizontal="center",
-                    vertical="center"
-                )
-
-            # MATRIX VALUES
-            for row in worksheet.iter_rows(
-                min_row=5,
-                max_row=worksheet.max_row
-            ):
+            for row in ws.iter_rows():
 
                 for cell in row:
-                    cell.alignment = Alignment(
-                        horizontal="center",
-                        vertical="center"
-                    )
 
-            # TOTAL ROW
-            for cell in worksheet[worksheet.max_row]:
-                cell.font = Font(bold=True)
+                    cell.alignment = center
+                    cell.border = thin_border
 
-            # COLUMN WIDTHS
-            for col_num in range(
-                1,
-                worksheet.max_column + 1
-            ):
+            for cell in ws[1]:
 
-                max_length = 0
+                if cell.value is not None:
+                    cell.fill = header_fill
+                    cell.font = header_font
 
-                for row_num in range(
-                    4,
-                    worksheet.max_row + 1
+            for column in ws.columns:
+
+                max_length = max(
+                    len(str(cell.value))
+                    if cell.value is not None else 0
+                    for cell in column
+                )
+
+                ws.column_dimensions[
+                    column[0].column_letter
+                ].width = max(max_length + 4, 12)
+
+        # ==========================================
+        # SHEET 1: COURSE SUMMARY
+        # ==========================================
+
+        ws1 = workbook.active
+        ws1.title = "Course Summary"
+
+        ws1.append([
+            course_code_str,
+            "Weight",
+            "CO1",
+            "CO2",
+            "CO3",
+            "CO4",
+            "TOTAL"
+        ])
+
+        # ------------------------------------------
+        # PO SUMMARY DATA
+        # ------------------------------------------
+
+        # po_summary_df must be the DataFrame
+        # containing your calculated PO summary.
+        # It must contain:
+        # Assessment, Weight, CO1, CO2, CO3, CO4, TOTAL.
+
+        po_df = po_summary_df.copy()
+
+        for assessment in ["PO1", "PO2", "LE", "LM"]:
+
+            matching_rows = po_df[
+                po_df["Assessment"] == assessment
+            ]
+
+            row_values = [
+                assessment,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+            ]
+
+            if not matching_rows.empty:
+
+                row_data = matching_rows.iloc[0]
+
+                row_values = [
+                    assessment,
+                    row_data.get("Weight", 0),
+                    row_data.get("CO1", 0),
+                    row_data.get("CO2", 0),
+                    row_data.get("CO3", 0),
+                    row_data.get("CO4", 0),
+                    row_data.get("TOTAL", 0)
+                ]
+
+            ws1.append(row_values)
+
+        # ------------------------------------------
+        # FIRST SHEET TOTAL ROW
+        # ------------------------------------------
+
+        ws1.append([
+            "TOTAL",
+
+            sum(
+                ws1.cell(row=r, column=2).value or 0
+                for r in range(2, 6)
+            ),
+
+            *[
+                sum(
+                    ws1.cell(row=r, column=c).value or 0
+                    for r in range(2, 6)
+                )
+                for c in range(3, 7)
+            ],
+
+            sum(
+                ws1.cell(row=r, column=7).value or 0
+                for r in range(2, 6)
+            )
+        ])
+
+        format_sheet(ws1)
+
+        for cell in ws1[6]:
+            cell.font = total_font
+
+        ws1.freeze_panes = "C2"
+
+        # ==========================================
+        # SHEET 2: CO-PO ASSESSMENT
+        # ==========================================
+
+        ws2 = workbook.create_sheet("CO-PO Assessment")
+
+        ws2.append([
+            course_code_str,
+            "",
+            "CO1",
+            "CO2",
+            "CO3",
+            "CO4",
+            "CO5"
+        ])
+
+        assessment_names = [
+            "PA1",
+            "PA2",
+            "LE1",
+            "LM"
+        ]
+
+        display_names = {
+            "PA1": "PA1",
+            "PA2": "PA2",
+            "LE1": "LE",
+            "LM": "LM"
+        }
+
+        # ------------------------------------------
+        # FIRST BLOCK
+        # ------------------------------------------
+
+        for assessment in assessment_names:
+
+            row = [
+                "",
+                display_names[assessment]
+            ]
+
+            for co in ["CO1", "CO2", "CO3", "CO4", "CO5"]:
+
+                if (
+                    assessment in allocation_matrix.index
+                    and co in allocation_matrix.columns
                 ):
 
-                    value = worksheet.cell(
-                        row=row_num,
-                        column=col_num
-                    ).value
+                    value = allocation_matrix.loc[
+                        assessment, co
+                    ]
 
-                    if value is not None:
-                        max_length = max(
-                            max_length,
-                            len(str(value))
-                        )
+                else:
+                    value = 0
 
-                column_letter = get_column_letter(col_num)
+                row.append(round(float(value), 2))
 
-                worksheet.column_dimensions[
-                    column_letter
-                ].width = min(max_length + 4, 25)
+            ws2.append(row)
 
-            worksheet.row_dimensions[1].height = 28
-            worksheet.row_dimensions[2].height = 24
-            worksheet.freeze_panes = "B5"
+        # ------------------------------------------
+        # SECOND BLOCK
+        # ------------------------------------------
+
+        ws2.append([
+            course_code_str,
+            "PA1",
+            *[
+                round(
+                    float(allocation_matrix.loc["PA1", co]), 2
+                )
+                if co in allocation_matrix.columns else 0
+                for co in ["CO1", "CO2", "CO3", "CO4", "CO5"]
+            ]
+        ])
+
+        for assessment in ["PA2", "LE1", "LM"]:
+
+            row = [
+                "",
+                display_names[assessment]
+            ]
+
+            for co in ["CO1", "CO2", "CO3", "CO4", "CO5"]:
+
+                if (
+                    assessment in allocation_matrix.index
+                    and co in allocation_matrix.columns
+                ):
+
+                    value = allocation_matrix.loc[
+                        assessment, co
+                    ]
+
+                else:
+                    value = 0
+
+                row.append(round(float(value), 2))
+
+            ws2.append(row)
+
+        format_sheet(ws2)
+
+        ws2.freeze_panes = "C2"
+
+        # ------------------------------------------
+        # SAVE WORKBOOK
+        # ------------------------------------------
+
+        workbook.save(output)
 
         output.seek(0)
 
@@ -1178,7 +1293,7 @@ if calculate_button:
         try:
 
             success, result = upload_to_google_sheets(
-                export_df,
+                result_df.round(2),
                 course_code,
                 department,
                 program,
@@ -1205,8 +1320,16 @@ if calculate_button:
             )
 
         # ==========================================
-        # DOWNLOAD BUTTON
+        # DOWNLOAD EXCEL REPORT
         # ==========================================
+
+        safe_course_code = "".join(
+            ch for ch in course_code_str
+            if ch not in '[]:*?/\\'
+        ).strip("'")
+
+        if not safe_course_code:
+            safe_course_code = "Course"
 
         st.markdown(
             '<div class="section-heading">Download Results</div>',
@@ -1216,7 +1339,7 @@ if calculate_button:
         st.download_button(
             label="Download Excel Report",
             data=excel_data,
-            file_name=f"{safe_course_code}_CO_Assessment_Matrix.xlsx",
+            file_name=f"{safe_course_code}_Assessment_Report.xlsx",
             mime=(
                 "application/vnd.openxmlformats-officedocument."
                 "spreadsheetml.sheet"
