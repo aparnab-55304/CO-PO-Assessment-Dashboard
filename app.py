@@ -1,7 +1,7 @@
 import requests
 import streamlit as st
 import pandas as pd
-from openpyxl.styles import Font, PatternFill, Alignment, Border
+from openpyxl.styles import Font, PatternFill, Alignment, Border,Side
 from openpyxl.utils import get_column_letter
 from io import BytesIO
 from pathlib import Path
