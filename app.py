@@ -194,16 +194,32 @@ def get_department_courses_from_google_sheets(department):
 
 
 # ==================================================
-# CUSTOM CSS
+# PAGE CONFIGURATION
+# ==================================================
+
+st.set_page_config(
+    page_title="CO Weightage Allocation Dashboard",
+    page_icon="📊",
+    layout="wide"
+)
+
+EXCEL_FILE = Path(_file_).parent / "Course Group.xlsx"
+
+# The final matrix grand total is based on the sum of entered assessment weights.
+
+# ==================================================
+# CUSTOM CSS - SLATE BLUE + WARM BEIGE
 # ==================================================
 
 st.markdown("""
 <style>
 
+/* MAIN PAGE BACKGROUND */
 .stApp {
     background-color: #F5F2EC;
 }
 
+/* GENERAL TEXT */
 .stApp p,
 .stApp li,
 .stApp label,
@@ -212,6 +228,7 @@ st.markdown("""
     color: #29323A !important;
 }
 
+/* DASHBOARD HEADER */
 .dashboard-header {
     background: linear-gradient(120deg, #26364A, #52677D);
     padding: 30px 32px;
@@ -237,8 +254,10 @@ st.markdown("""
     font-weight: 700 !important;
     margin-top: 8px;
     margin-bottom: 0;
+    opacity: 1 !important;
 }
 
+/* SECTION HEADINGS */
 .section-heading {
     color: #26364A !important;
     font-size: 21px;
@@ -249,6 +268,7 @@ st.markdown("""
     padding-left: 12px;
 }
 
+/* ASSESSMENT CARDS */
 [data-testid="stVerticalBlockBorderWrapper"] {
     background-color: #FFFFFF;
     border: 1px solid #E3DDD2;
@@ -258,6 +278,7 @@ st.markdown("""
     margin-bottom: 15px;
 }
 
+/* ASSESSMENT TITLES */
 .assessment-title {
     color: #26364A !important;
     font-size: 20px;
@@ -265,6 +286,7 @@ st.markdown("""
     margin-bottom: 10px;
 }
 
+/* TEXT AND NUMBER INPUTS */
 .stTextInput input,
 .stNumberInput input {
     color: #29323A !important;
@@ -280,11 +302,13 @@ st.markdown("""
     font-weight: 600 !important;
 }
 
+/* SELECT BOX */
 .stSelectbox div[data-baseweb="select"],
 .stSelectbox div[data-baseweb="select"] span {
     color: #29323A !important;
 }
 
+/* BUTTONS */
 .stButton > button,
 .stDownloadButton > button {
     background-color: #26364A !important;
@@ -294,6 +318,7 @@ st.markdown("""
     border-radius: 8px;
     font-weight: 700 !important;
     padding: 9px 22px;
+    transition: 0.3s ease;
 }
 
 .stButton > button *,
@@ -306,9 +331,11 @@ st.markdown("""
 .stButton > button:hover,
 .stDownloadButton > button:hover {
     background-color: #52677D !important;
+    color: #FFFFFF !important;
     border-color: #C6A77D !important;
 }
 
+/* METRIC CARDS */
 [data-testid="stMetric"] {
     background-color: #FFFFFF;
     border: 1px solid #E3DDD2;
@@ -317,18 +344,28 @@ st.markdown("""
     padding: 15px;
 }
 
-[data-testid="stMetricLabel"],
-[data-testid="stMetricValue"] {
+[data-testid="stMetricLabel"] {
     color: #26364A !important;
     font-weight: 700 !important;
 }
 
+[data-testid="stMetricValue"] {
+    color: #26364A !important;
+    font-weight: 750 !important;
+}
+
+/* DATA TABLES */
 [data-testid="stDataFrame"],
 [data-testid="stDataEditor"] {
     border: 1px solid #E3DDD2;
     border-radius: 8px;
 }
 
+/* EXPANDER */
+[data-testid="stExpander"] summary {
+    color: #26364A !important;
+    font-weight: 700 !important;
+}
 .dashboard-department {
     color: #E8DCC9 !important;
     font-size: 14px;
@@ -336,10 +373,8 @@ st.markdown("""
     margin-top: 12px;
     margin-bottom: 0;
 }
-
 </style>
 """, unsafe_allow_html=True)
-
 
 # ==================================================
 # DASHBOARD HEADER
@@ -348,17 +383,14 @@ st.markdown("""
 st.markdown("""
 <div class="dashboard-header">
     <h1>CO Weightage Allocation Dashboard</h1>
-
     <div class="dashboard-subtitle">
         Course Outcome Assessment Weightage Management System
     </div>
-
     <div class="dashboard-department">
         Developed by MIMAMSA | Department of Statistics
     </div>
 </div>
 """, unsafe_allow_html=True)
-
 
 # ==================================================
 # LOAD COURSE DETAILS FROM EXCEL
