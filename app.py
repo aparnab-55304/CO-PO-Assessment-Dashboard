@@ -1031,241 +1031,241 @@ if calculate_button:
 
         else:
 
-            # ------------------------------------------
-            # EXCEL EXPORT - MULTIPLE COURSE SHEETS
-            # ------------------------------------------
+            
+output = BytesIO()
 
-            output = BytesIO()
+with pd.ExcelWriter(
+    output,
+    engine="openpyxl"
+) as writer:
 
-            with pd.ExcelWriter(
-                output,
-                engine="openpyxl"
-            ) as writer:
+    for course in saved_courses:
 
-                for course in saved_courses:
+        values = course["values"]
 
-                    values = course["values"]
+        # --------------------------------------
+        # GET COURSE DETAILS
+        # --------------------------------------
 
-                    # --------------------------------------
-# GET COURSE DETAILS
-# --------------------------------------
+        course_department = str(values[0][0]).replace(
+            "DEPARTMENT:", ""
+        ).strip()
 
-course_department = str(values[0][0]).replace(
-    "DEPARTMENT:", ""
-).strip()
+        course_program = course["name"]
 
-# Course name comes from the course tab name
-course_program = course["name"]
+        # --------------------------------------
+        # GET MATRIX HEADINGS
+        # --------------------------------------
 
-# --------------------------------------
-# GET MATRIX HEADINGS
-# --------------------------------------
+        headers = values[3][1:7]
 
-headers = values[3][1:]
+        # --------------------------------------
+        # GET MATRIX VALUES
+        # --------------------------------------
 
-# --------------------------------------
-# GET MATRIX VALUES
-# --------------------------------------
+        data_rows = []
 
-data_rows = []
+        for row in values[4:]:
 
-for row in values[4:]:
+            if len(row) < 7:
+                continue
 
-    if not row or not str(row[1]).strip():
-        continue
+            if not str(row[1]).strip():
+                continue
 
-    data_rows.append(
-        row[1:len(headers) + 1]
-    )
-                    # --------------------------------------
-                    # CREATE WORKSHEET NAME
-                    # --------------------------------------
+            data_rows.append(row[1:7])
 
-                    safe_course_code = "".join(
-                        ch for ch in str(course["name"])
-                        if ch not in '[]:*?/\\'
-                    ).strip("'")
+        if not data_rows:
+            continue
 
-                    sheet_suffix = "-CO Matrix"
+        course_df = pd.DataFrame(
+            data_rows,
+            columns=headers
+        )
 
-                    sheet_name = (
-                        safe_course_code[:31 - len(sheet_suffix)]
-                        + sheet_suffix
-                    )
+        course_df = course_df.round(2)
 
-                    # --------------------------------------
-                    # EXPORT COURSE MATRIX
-                    # --------------------------------------
+        # --------------------------------------
+        # CREATE WORKSHEET NAME
+        # --------------------------------------
 
-                    course_df.to_excel(
-                        writer,
-                        sheet_name=sheet_name,
-                        index=False,
-                        startrow=3
-                    )
+        safe_course_code = "".join(
+            ch for ch in str(course["name"])
+            if ch not in '[]:*?/\\'
+        ).strip("'")
 
-                    worksheet = writer.sheets[sheet_name]
+        sheet_suffix = "-CO Matrix"
 
-                    last_column = course_df.shape[1]
+        sheet_name = (
+            safe_course_code[:31 - len(sheet_suffix)]
+            + sheet_suffix
+        )
 
-                    # --------------------------------------
-                    # FIRST ROW - DEPARTMENT NAME
-                    # --------------------------------------
+        # --------------------------------------
+        # EXPORT COURSE MATRIX
+        # --------------------------------------
 
-                    worksheet.merge_cells(
-                        start_row=1,
-                        start_column=1,
-                        end_row=1,
-                        end_column=last_column
-                    )
+        course_df.to_excel(
+            writer,
+            sheet_name=sheet_name,
+            index=False,
+            startrow=3
+        )
 
-                    worksheet["A1"] = course_department
-                    worksheet["A1"].border = Border()
+        worksheet = writer.sheets[sheet_name]
 
-                    worksheet["A1"].font = Font(
-                        bold=True,
-                        size=16,
-                        color="FFFFFF"
-                    )
+        last_column = course_df.shape[1]
 
-                    worksheet["A1"].fill = PatternFill(
-                        fill_type="solid",
-                        fgColor="26364A"
-                    )
+        # --------------------------------------
+        # FIRST ROW - DEPARTMENT NAME
+        # --------------------------------------
 
-                    worksheet["A1"].alignment = Alignment(
-                        horizontal="center",
-                        vertical="center"
-                    )
+        worksheet.merge_cells(
+            start_row=1,
+            start_column=1,
+            end_row=1,
+            end_column=last_column
+        )
 
-                    # --------------------------------------
-                    # SECOND ROW - COURSE NAME
-                    # --------------------------------------
+        worksheet["A1"] = "DEPARTMENT: " + course_department
 
-                    worksheet.merge_cells(
-                        start_row=2,
-                        start_column=1,
-                        end_row=2,
-                        end_column=last_column
-                    )
+        worksheet["A1"].font = Font(
+            bold=True,
+            size=16,
+            color="FFFFFF"
+        )
 
-                    worksheet["A2"] = course_program
-                    worksheet["A2"].border = Border()
+        worksheet["A1"].fill = PatternFill(
+            fill_type="solid",
+            fgColor="26364A"
+        )
 
-                    worksheet["A2"].font = Font(
-                        bold=True,
-                        size=13,
-                        color="26364A"
-                    )
+        worksheet["A1"].alignment = Alignment(
+            horizontal="center",
+            vertical="center"
+        )
 
-                    worksheet["A2"].alignment = Alignment(
-                        horizontal="center",
-                        vertical="center"
-                    )
+        # --------------------------------------
+        # SECOND ROW - COURSE NAME
+        # --------------------------------------
 
-                    # --------------------------------------
-                    # FOURTH ROW - MATRIX HEADINGS
-                    # --------------------------------------
+        worksheet.merge_cells(
+            start_row=2,
+            start_column=1,
+            end_row=2,
+            end_column=last_column
+        )
 
-                    for cell in worksheet[4]:
+        worksheet["A2"] = "COURSE NAME: " + course_program
 
-                        cell.font = Font(
-                            bold=True,
-                            color="FFFFFF"
-                        )
+        worksheet["A2"].font = Font(
+            bold=True,
+            size=13,
+            color="26364A"
+        )
 
-                        cell.fill = PatternFill(
-                            fill_type="solid",
-                            fgColor="26364A"
-                        )
+        worksheet["A2"].alignment = Alignment(
+            horizontal="center",
+            vertical="center"
+        )
 
-                        cell.alignment = Alignment(
-                            horizontal="center",
-                            vertical="center"
-                        )
+        # --------------------------------------
+        # THIRD ROW - COURSE CODE
+        # --------------------------------------
 
-                    # --------------------------------------
-                    # MATRIX VALUES
-                    # --------------------------------------
+        worksheet.merge_cells(
+            start_row=3,
+            start_column=1,
+            end_row=3,
+            end_column=last_column
+        )
 
-                    for row in worksheet.iter_rows(
-                        min_row=5,
-                        max_row=worksheet.max_row
-                    ):
+        worksheet["A3"] = str(values[4][0]) if len(values) > 4 else ""
 
-                        for cell in row:
+        worksheet["A3"].font = Font(
+            bold=True,
+            size=11,
+            color="26364A"
+        )
 
-                            cell.alignment = Alignment(
-                                horizontal="center",
-                                vertical="center"
-                            )
+        worksheet["A3"].alignment = Alignment(
+            horizontal="center",
+            vertical="center"
+        )
 
-                    # Bold TOTAL row
-                    for cell in worksheet[worksheet.max_row]:
-                        cell.font = Font(bold=True)
+        # --------------------------------------
+        # FOURTH ROW - MATRIX HEADINGS
+        # --------------------------------------
 
-                    # --------------------------------------
-                    # COLUMN WIDTHS AND ROW HEIGHTS
-                    # --------------------------------------
+        for cell in worksheet[4]:
 
-                    for col_num in range(
-                        1,
-                        worksheet.max_column + 1
-                    ):
-
-                        max_length = 0
-
-                        for row_num in range(
-                            4,
-                            worksheet.max_row + 1
-                        ):
-
-                            cell_value = worksheet.cell(
-                                row=row_num,
-                                column=col_num
-                            ).value
-
-                            if cell_value is not None:
-
-                                max_length = max(
-                                    max_length,
-                                    len(str(cell_value))
-                                )
-
-                        column_letter = get_column_letter(col_num)
-
-                        worksheet.column_dimensions[
-                            column_letter
-                        ].width = min(max_length + 4, 25)
-
-                    worksheet.row_dimensions[1].height = 28
-                    worksheet.row_dimensions[2].height = 24
-
-                    worksheet.freeze_panes = "B5"
-
-            output.seek(0)
-
-            # --------------------------------------
-            # DOWNLOAD BUTTON
-            # --------------------------------------
-
-            st.markdown(
-                '<div class="section-heading">Download Results</div>',
-                unsafe_allow_html=True
+            cell.font = Font(
+                bold=True,
+                color="FFFFFF"
             )
 
-            safe_department = "".join(
-                ch for ch in str(department)
-                if ch not in '[]:*?/\\'
-            ).strip()
-
-            st.download_button(
-                label="Download Excel Report",
-                data=output,
-                file_name=f"{safe_department}_CO_Assessment_Matrices.xlsx",
-                mime=(
-                    "application/vnd.openxmlformats-officedocument."
-                    "spreadsheetml.sheet"
-                ),
-                use_container_width=True
+            cell.fill = PatternFill(
+                fill_type="solid",
+                fgColor="26364A"
             )
+
+            cell.alignment = Alignment(
+                horizontal="center",
+                vertical="center"
+            )
+
+        # --------------------------------------
+        # MATRIX VALUES
+        # --------------------------------------
+
+        for row in worksheet.iter_rows(
+            min_row=5,
+            max_row=worksheet.max_row
+        ):
+
+            for cell in row:
+
+                cell.alignment = Alignment(
+                    horizontal="center",
+                    vertical="center"
+                )
+
+        # --------------------------------------
+        # COLUMN WIDTHS AND ROW HEIGHTS
+        # --------------------------------------
+
+        for col_num in range(
+            1,
+            worksheet.max_column + 1
+        ):
+
+            max_length = 0
+
+            for row_num in range(
+                4,
+                worksheet.max_row + 1
+            ):
+
+                cell_value = worksheet.cell(
+                    row=row_num,
+                    column=col_num
+                ).value
+
+                if cell_value is not None:
+                    max_length = max(
+                        max_length,
+                        len(str(cell_value))
+                    )
+
+            column_letter = get_column_letter(col_num)
+
+            worksheet.column_dimensions[
+                column_letter
+            ].width = min(max_length + 4, 25)
+
+        worksheet.row_dimensions[1].height = 28
+        worksheet.row_dimensions[2].height = 24
+        worksheet.row_dimensions[3].height = 20
+        worksheet.freeze_panes = "A5"
+
+output.seek(0)
