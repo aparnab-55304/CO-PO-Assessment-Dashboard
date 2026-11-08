@@ -18,6 +18,32 @@ from openpyxl.utils import get_column_letter
 
 
 # ==================================================
+# GET SEMESTER FROM COURSE CODE
+# ==================================================
+
+import re
+
+def get_semester_from_course_code(course_code):
+
+    code = str(course_code).strip()
+
+    match = re.search(r"(\d{3})$", code)
+
+    if not match:
+        raise ValueError(
+            "Unable to identify semester from course code."
+        )
+
+    semester_number = int(match.group(1)[-1])
+
+    if semester_number == 0:
+        raise ValueError(
+            "Invalid semester number in course code."
+        )
+
+    return f"Semester {semester_number}"
+
+# ==================================================
 # CONFIGURATION
 # ==================================================
 
