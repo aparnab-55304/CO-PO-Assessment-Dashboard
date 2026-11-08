@@ -33,32 +33,14 @@ EXCEL_FILE = Path(__file__).parent / "Course Group.xlsx"
 APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwpDFtOmq7ofgryMbABdWiV8_GBI_DvboGTtYEfb9UdbMrL6WBcqRUOLUugSn-c-KZQ5Q/exec"
 
 
+
 # ==================================================
-# GOOGLE SHEETS FUNCTIONS
+# GOOGLE SHEETS UPLOAD FUNCTION
 # ==================================================
-
-def get_semester_from_course_code(course_code):
-
-    code = str(course_code).strip()
-
-    match = re.search(r"(\d{3})$", code)
-
-    if not match:
-        raise ValueError(
-            "Unable to identify semester from course code."
-        )
-
-    semester_number = int(match.group(1)[-1])
-
-    if semester_number == 0:
-        raise ValueError("Invalid semester number in course code.")
-
-    return f"Semester {semester_number}"
-
 
 def upload_to_google_sheets(
     department,
-    program,
+    course_name,
     course_code,
     result_df
 ):
@@ -66,10 +48,7 @@ def upload_to_google_sheets(
     try:
 
         if "PASTE_YOUR_APPS_SCRIPT" in APPS_SCRIPT_URL:
-            raise ValueError(
-                "Please enter your deployed Apps Script URL "
-                "in the APPS_SCRIPT_URL variable."
-            )
+            raise ValueError("Invalid Apps Script URL.")
 
         secret = st.secrets["app_secret"]
 
@@ -80,15 +59,27 @@ def upload_to_google_sheets(
             if re.fullmatch(r"CO\d+", str(col))
         ]
 
-        # Department sheet data:
-        # Each row = Course Code, Assessment, COs, TOTAL
+        # ------------------------------------------
+        # TABLE HEADER
+        # ------------------------------------------
+
+        header = [
+            "Course Code",
+            "Assessment",
+            *co_columns,
+            "TOTAL"
+        ]
+
+        # ------------------------------------------
+        # ALLOCATION DATA
+        # ------------------------------------------
 
         department_rows = []
 
         for _, row in result_df.iterrows():
 
             values = [
-                str(course_code),
+                str(course_code).strip(),
                 str(row["Assessment"])
             ]
 
@@ -99,97 +90,62 @@ def upload_to_google_sheets(
 
             department_rows.append(values)
 
-        # Main Head data:
-        # First row is the table heading.
+        # Teacher spreadsheet: header + data
+        teacher_rows = [header] + department_rows
 
-        main_head_rows = [
-            [
-                "Course Code",
-                "Assessment",
-                *co_columns,
-                "TOTAL"
-            ]
-        ] + department_rows
+        # Main Head spreadsheet: header + data
+        main_head_rows = [header] + department_rows
+
+        # ------------------------------------------
+        # SEND DATA
+        # ------------------------------------------
+
+        payload = {
+
+            "token": secret,
+
+            "department": str(department).strip(),
+
+            "course_code": str(course_code).strip(),
+
+            "course_name": str(course_name).strip(),
+
+            "semester": semester,
+
+            "values": teacher_rows,
+
+            "book1_rows": main_head_rows
+
+        }
 
         response = requests.post(
             APPS_SCRIPT_URL,
-            json={
-                "token": secret,
-                "department": str(department).strip(),
-                "course_code": str(course_code).strip(),
-                "course_name": str(program).strip(),
-                "semester": semester,
-
-                # Actual assessment rows for department sheet
-                "values": department_rows,
-
-                # Header + assessment rows for Main Head
-                "book1_rows": main_head_rows
-            },
-            timeout=30
+            json=payload,
+            timeout=60
         )
 
         response.raise_for_status()
 
         result = response.json()
 
-        if result.get("status") == "success":
+        # Apps Script returns success: true
+        if result.get("success") is True:
 
-            st.success("Course saved successfully!")
+            st.success(
+                f"Successfully saved {course_name} "
+                f"({course_code}) to both spreadsheets."
+            )
 
             return True
 
-        st.error(
-            f"Google Sheets error: {result.get('message')}"
-        )
+        else:
 
-        return False
+            st.error(
+                "Google Sheets error: " +
+                str(result.get("message", "Unknown error"))
+            )
 
-    except KeyError:
-
-        st.error(
-            "Missing app_secret. Add it in Streamlit Cloud "
-            "under Manage app → Settings → Secrets."
-        )
-
-        return False
-
-    except Exception as e:
-
-        st.error(f"Google Sheets upload failed: {e}")
-
-        return False
-
-
-def get_department_courses_from_google_sheets(department):
-
-    try:
-
-        # GET request also requires the secret token
-        secret = st.secrets["app_secret"]
-
-        response = requests.get(
-            APPS_SCRIPT_URL,
-            params={
-                "department": str(department).strip(),
-                "token": secret
-            },
-            timeout=30
-        )
-
-        response.raise_for_status()
-
-        result = response.json()
-
-        if result.get("status") == "success":
-
-            return result.get("courses", [])
-
-        st.error(
-            f"Could not retrieve courses: {result.get('message')}"
-        )
-
-        return []
+            return False
 
     except KeyError:
 
@@ -197,16 +153,15 @@ def get_department_courses_from_google_sheets(department):
             "Missing app_secret in Streamlit Secrets."
         )
 
-        return []
+        return False
 
     except Exception as e:
 
         st.error(
-            f"Could not retrieve saved courses: {e}"
+            f"Google Sheets upload failed: {e}"
         )
 
-        return []
-
+        return False
 
 # ==================================================
 # FAST MATRIX BALANCING (NUMPY)
