@@ -1,5 +1,6 @@
 import re
 import requests
+import numpy as np
 import streamlit as st
 import pandas as pd
 
@@ -205,6 +206,59 @@ def get_department_courses_from_google_sheets(department):
         )
 
         return []
+
+
+# ==================================================
+# FAST MATRIX BALANCING (NUMPY)
+# ==================================================
+
+def balance_matrix(
+    raw_values,
+    row_targets,
+    column_targets,
+    tolerance=1e-9,
+    max_iterations=5000
+):
+
+    balanced = raw_values.astype(float).copy()
+
+    balanced[row_targets == 0, :] = 0.0
+    balanced[:, column_targets == 0] = 0.0
+
+    for _ in range(max_iterations):
+
+        row_sums = balanced.sum(axis=1)
+
+        row_mask = row_sums > 0
+
+        balanced[row_mask, :] *= (
+            row_targets[row_mask] / row_sums[row_mask]
+        )[:, None]
+
+        balanced[row_targets == 0, :] = 0.0
+
+        column_sums = balanced.sum(axis=0)
+
+        column_mask = column_sums > 0
+
+        balanced[:, column_mask] *= (
+            column_targets[column_mask] / column_sums[column_mask]
+        )
+
+        balanced[:, column_targets == 0] = 0.0
+
+        row_difference = np.abs(
+            balanced.sum(axis=1) - row_targets
+        ).max()
+
+        column_difference = np.abs(
+            balanced.sum(axis=0) - column_targets
+        ).max()
+
+        if max(row_difference, column_difference) < tolerance:
+            return balanced, True
+
+    return balanced, False
 
 
 # ==================================================
@@ -852,73 +906,22 @@ if assessment_total_sum > 0:
 
         if balance_error is None:
 
-            balanced = raw_matrix.astype(float).copy()
-
-            for assessment in assessment_names:
-
-                if row_targets[assessment] == 0:
-                    balanced.loc[assessment, :] = 0.0
-
-            for co in co_list:
-
-                if column_targets[co] == 0:
-                    balanced.loc[:, co] = 0.0
-
-            converged = False
-            tolerance = 1e-9
-            max_iterations = 20000
-
-            for _ in range(max_iterations):
-
-                current_rows = balanced.sum(axis=1)
-
-                for assessment in assessment_names:
-
-                    current = current_rows[assessment]
-                    target = row_targets[assessment]
-
-                    if target == 0:
-                        balanced.loc[assessment, :] = 0.0
-
-                    elif current > 0:
-                        balanced.loc[assessment, :] *= (
-                            target / current
-                        )
-
-                current_columns = balanced.sum(axis=0)
-
-                for co in co_list:
-
-                    current = current_columns[co]
-                    target = column_targets[co]
-
-                    if target == 0:
-                        balanced.loc[:, co] = 0.0
-
-                    elif current > 0:
-                        balanced.loc[:, co] *= (
-                            target / current
-                        )
-
-                row_difference = (
-                    balanced.sum(axis=1) - row_targets
-                ).abs().max()
-
-                column_difference = (
-                    balanced.sum(axis=0) - column_targets
-                ).abs().max()
-
-                if max(
-                    row_difference,
-                    column_difference
-                ) < tolerance:
-
-                    converged = True
-                    break
+            balanced_values, converged = balance_matrix(
+                raw_matrix.loc[assessment_names, co_list]
+                .values.astype(float),
+                row_targets.loc[assessment_names]
+                .values.astype(float),
+                column_targets.loc[co_list]
+                .values.astype(float)
+            )
 
             if converged:
 
-                allocation_matrix = balanced
+                allocation_matrix = pd.DataFrame(
+                    balanced_values,
+                    index=assessment_names,
+                    columns=co_list
+                )
 
             else:
 
@@ -1229,12 +1232,14 @@ if calculate_button:
         # GOOGLE SHEETS UPLOAD
         # ------------------------------------------
 
-        upload_success = upload_to_google_sheets(
-            department,
-            program,
-            course_code,
-            result_df
-        )
+        with st.spinner("Saving to Google Sheets..."):
+
+            upload_success = upload_to_google_sheets(
+                department,
+                program,
+                course_code,
+                result_df
+            )
 
         # ------------------------------------------
         # RETRIEVE SAVED COURSES
@@ -1242,11 +1247,13 @@ if calculate_button:
 
         if upload_success:
 
-            saved_courses = (
-                get_department_courses_from_google_sheets(
-                    department
+            with st.spinner("Preparing Excel download..."):
+
+                saved_courses = (
+                    get_department_courses_from_google_sheets(
+                        department
+                    )
                 )
-            )
 
             if not saved_courses:
 
