@@ -1,3 +1,4 @@
+
 import re
 import requests
 import numpy as np
@@ -21,8 +22,6 @@ from openpyxl.utils import get_column_letter
 # GET SEMESTER FROM COURSE CODE
 # ==================================================
 
-import re
-
 def get_semester_from_course_code(course_code):
 
     code = str(course_code).strip()
@@ -43,6 +42,7 @@ def get_semester_from_course_code(course_code):
 
     return f"Semester {semester_number}"
 
+
 # ==================================================
 # CONFIGURATION
 # ==================================================
@@ -57,7 +57,6 @@ EXCEL_FILE = Path(__file__).parent / "Course Group.xlsx"
 
 # PASTE YOUR DEPLOYED APPS SCRIPT WEB APP URL HERE
 APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwpDFtOmq7ofgryMbABdWiV8_GBI_DvboGTtYEfb9UdbMrL6WBcqRUOLUugSn-c-KZQ5Q/exec"
-
 
 
 # ==================================================
@@ -154,8 +153,8 @@ def upload_to_google_sheets(
 
         result = response.json()
 
-        # Apps Script returns success: true
-        if result.get("success") is True:
+        # Apps Script returns status: "success"
+        if result.get("status") == "success":
 
             st.success(
                 f"Successfully saved {course_name} "
@@ -188,6 +187,60 @@ def upload_to_google_sheets(
         )
 
         return False
+
+
+# ==================================================
+# RETRIEVE SAVED COURSES FROM GOOGLE SHEETS
+# ==================================================
+
+def get_department_courses_from_google_sheets(department):
+
+    try:
+
+        secret = st.secrets["app_secret"]
+
+        response = requests.get(
+            APPS_SCRIPT_URL,
+            params={
+                "department": str(department).strip(),
+                "token": secret
+            },
+            timeout=60
+        )
+
+        response.raise_for_status()
+
+        result = response.json()
+
+        if result.get("status") == "success":
+
+            return result.get("courses", [])
+
+        else:
+
+            st.error(
+                "Google Sheets retrieval error: "
+                + str(result.get("message", "Unknown error"))
+            )
+
+            return []
+
+    except KeyError:
+
+        st.error(
+            "Missing app_secret in Streamlit Secrets."
+        )
+
+        return []
+
+    except Exception as e:
+
+        st.error(
+            f"Unable to retrieve courses from Google Sheets: {e}"
+        )
+
+        return []
+
 
 # ==================================================
 # FAST MATRIX BALANCING (NUMPY)
@@ -1605,3 +1658,4 @@ if calculate_button:
                         "No valid course matrices were returned "
                         "from Google Sheets for Excel export."
                     )
+
