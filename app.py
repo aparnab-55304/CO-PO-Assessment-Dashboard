@@ -101,7 +101,7 @@ st.set_page_config(
     layout="wide"
 )
 
-EXCEL_FILE = Path(__file__).parent / "Course Group.xlsx"
+EXCEL_FILE = Path(__file__).parent / "All_Courses_Consolidated.xlsx""
 
 # The final matrix grand total is based on the sum of entered assessment weights.
 
