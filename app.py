@@ -1101,57 +1101,8 @@ if calculate_button:
                     # FIRST ROW - DEPARTMENT NAME
                     # --------------------------------------
 
-                    worksheet.merge_cells(
-                        start_row=1,
-                        start_column=1,
-                        end_row=1,
-                        end_column=last_column
-                    )
 
-                    worksheet["A1"] = course_department
-                    worksheet["A1"].border = Border()
-
-                    worksheet["A1"].font = Font(
-                        bold=True,
-                        size=16,
-                        color="FFFFFF"
-                    )
-
-                    worksheet["A1"].fill = PatternFill(
-                        fill_type="solid",
-                        fgColor="26364A"
-                    )
-
-                    worksheet["A1"].alignment = Alignment(
-                        horizontal="center",
-                        vertical="center"
-                    )
-
-                    # --------------------------------------
-                    # SECOND ROW - COURSE NAME
-                    # --------------------------------------
-
-                    worksheet.merge_cells(
-                        start_row=2,
-                        start_column=1,
-                        end_row=2,
-                        end_column=last_column
-                    )
-
-                    worksheet["A2"] = course_program
-                    worksheet["A2"].border = Border()
-
-                    worksheet["A2"].font = Font(
-                        bold=True,
-                        size=13,
-                        color="26364A"
-                    )
-
-                    worksheet["A2"].alignment = Alignment(
-                        horizontal="center",
-                        vertical="center"
-                    )
-
+                    
                     # --------------------------------------
                     # FOURTH ROW - MATRIX HEADINGS
                     # --------------------------------------
